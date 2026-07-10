@@ -86,7 +86,8 @@ test_live_directory_lock_is_respected() (
 
 test_flock_mode_is_used_when_available() (
     create_fixture
-    ln -s "$(command -v flock)" "$MOCK_BIN/flock"
+    [[ -n "$TEST_FLOCK_BIN" ]] || return 77
+    ln -s "$TEST_FLOCK_BIN" "$MOCK_BIN/flock"
     run_update
     assert_status 0 "$RUN_STATUS" || exit
     [[ -f "$RUNTIME_DIR/upkeep-${UID}.lock" ]] || fail 'flock lock file was not created' || exit
@@ -96,7 +97,8 @@ test_flock_mode_is_used_when_available() (
 
 test_flock_mode_rejects_concurrent_run() (
     create_fixture
-    ln -s "$(command -v flock)" "$MOCK_BIN/flock"
+    [[ -n "$TEST_FLOCK_BIN" ]] || return 77
+    ln -s "$TEST_FLOCK_BIN" "$MOCK_BIN/flock"
     exec 8<>"$RUNTIME_DIR/upkeep-${UID}.lock"
     flock -n 8 || fail 'test setup could not take the lock' || exit
     run_update

@@ -87,6 +87,7 @@ create_fixture() {
     TEST_VIRTUAL_ENV=''
     TEST_XDG_RUNTIME_DIR="$RUNTIME_DIR"
     TEST_XDG_STATE_HOME="$FIXTURE_DIR/state"
+    TEST_FLOCK_BIN="${TEST_FLOCK_BIN-$(command -v flock 2>/dev/null || true)}"
     NODE_TLS_REJECT_UNAUTHORIZED=''
 }
 
@@ -207,6 +208,12 @@ run_test() {
         printf 'PASS [%s] %s\n' "$group" "$name"
         PASS_COUNT=$((PASS_COUNT + 1))
     else
+        local status=$?
+        if ((status == 77)); then
+            printf 'SKIP [%s] %s\n' "$group" "$name"
+            SKIP_COUNT=$((SKIP_COUNT + 1))
+            return
+        fi
         printf 'FAIL [%s] %s\n' "$group" "$name" >&2
         FAIL_COUNT=$((FAIL_COUNT + 1))
     fi
