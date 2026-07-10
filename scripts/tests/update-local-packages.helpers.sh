@@ -85,6 +85,7 @@ create_fixture() {
     MOCK_PYTHON_VENV='1'
     MOCK_PIP_FAIL_COMMAND=''
     TEST_VIRTUAL_ENV=''
+    TEST_XDG_CONFIG_HOME="$FIXTURE_DIR/home/.config"
     TEST_XDG_RUNTIME_DIR="$RUNTIME_DIR"
     TEST_XDG_STATE_HOME="$FIXTURE_DIR/state"
     TEST_FLOCK_BIN="${TEST_FLOCK_BIN-$(command -v flock 2>/dev/null || true)}"
@@ -160,6 +161,7 @@ run_update() {
         REAL_PYTHON_BIN="$REAL_PYTHON_BIN" \
         XDG_RUNTIME_DIR="$TEST_XDG_RUNTIME_DIR" \
         XDG_STATE_HOME="$TEST_XDG_STATE_HOME" \
+        XDG_CONFIG_HOME="$TEST_XDG_CONFIG_HOME" \
         HOME="$FIXTURE_DIR/home" \
         VIRTUAL_ENV="$TEST_VIRTUAL_ENV" \
         STUB_UNAME="$STUB_UNAME" \
