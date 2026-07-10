@@ -190,7 +190,7 @@ run_update() {
         MOCK_PIP_LIST_JSON="${MOCK_PIP_LIST_JSON:-[]}" \
         MOCK_VENV_VALID_STATUS="${MOCK_VENV_VALID_STATUS:-0}" \
         NODE_TLS_REJECT_UNAUTHORIZED="$NODE_TLS_REJECT_UNAUTHORIZED" \
-        /bin/bash "$UPDATE_SCRIPT" "$@" >"$OUTPUT_FILE" 2>&1
+        "${UPDATE_BASH:-/bin/bash}" "$UPDATE_SCRIPT" "$@" >"$OUTPUT_FILE" 2>&1
     RUN_STATUS=$?
     RUN_OUTPUT="$(<"$OUTPUT_FILE")"
     RUN_CALLS="$(<"$CALLS_FILE")"
