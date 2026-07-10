@@ -1,0 +1,15 @@
+# 编辑器与 IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 本地运行产物
+*.log
+scripts/**/tmp/
+config.local.sh
