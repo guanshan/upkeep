@@ -47,9 +47,19 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-      - name: Install shellcheck and shfmt
+      - name: Install shellcheck
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends shellcheck shfmt
+          sudo apt-get install -y -qq --no-install-recommends shellcheck
+      # shfmt 的排版规则随版本变化，发行版仓库里的版本与开发者本机常常不一致，
+      # 曾因此让同一份代码在本地通过而在 CI 失败。这里固定版本，让门禁可复现。
+      - name: Install shfmt
+        env:
+          SHFMT_VERSION: v3.14.1
+        run: |
+          curl -fsSL -o /tmp/shfmt \
+            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
+          sudo install -m 0755 /tmp/shfmt /usr/local/bin/shfmt
+          shfmt --version
       - name: Run lint
         run: make lint

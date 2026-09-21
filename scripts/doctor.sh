@@ -139,6 +139,16 @@ check_node_managers() {
     fi
 }
 
+# 独立成函数而不是在 if 里内联 heredoc：后者不同 shfmt 版本的排版要求互相矛盾，
+# 而且可读性差。
+python_has_pep668_marker() {
+    python3 - <<'PY'
+import os, sys, sysconfig
+marker = os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")
+raise SystemExit(0 if sys.prefix == sys.base_prefix and os.path.exists(marker) else 1)
+PY
+}
+
 check_python() {
     section 'Python'
     if ! command -v python3 >/dev/null 2>&1; then
@@ -151,12 +161,7 @@ check_python() {
     else
         note '当前 python3 未安装 pip（Python 包步骤会跳过）'
     fi
-    if python3 - <<'PY'
-import os, sys, sysconfig
-marker = os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")
-raise SystemExit(0 if sys.prefix == sys.base_prefix and os.path.exists(marker) else 1)
-PY
-    then
+    if python_has_pep668_marker; then
         note 'PEP 668：受保护环境（make update 会跳过全局 pip 更新）'
     else
         note 'PEP 668：未启用'
