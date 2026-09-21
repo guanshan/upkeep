@@ -40,6 +40,19 @@ jobs:
           UPDATE_BASH: /bin/bash
         run: make test
 
+  # apt 的真实契约（sudo 的 --preserve-env、debconf、真实升级）在 macOS 上根本
+  # 观察不到，只能靠这条。runner 预装了 Docker，直接复用 make verify-apt，
+  # 不另写一套验证逻辑。
+  verify-apt:
+    name: apt contract (containers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Verify the apt path
+        run: make verify-apt
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

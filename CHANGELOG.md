@@ -14,8 +14,9 @@
 - `PRIVATE_NPM_SCOPES`：整个 scope 下已安装的包改走私有 registry 更新（不会因缺失而安装）。
 - `scripts/lib/site-config.sh`：配置的查找、加载与校验，由 `make update` 与 `make doctor` 共用。
 - `make doctor` 新增「站点配置」一节，打印实际加载的配置路径与内容。
-- `.github/workflows/ci.yml`：Ubuntu + macOS 矩阵。macOS runner 用系统自带 Bash 3.2 跑测试，
-  并覆盖无 flock 时的 mkdir 目录锁回退——只有 Linux runner 的流水线测不到这两者。
+- `.github/workflows/ci.yml`：Ubuntu + macOS 矩阵，外加 lint 与 apt 契约验证。
+  macOS runner 用系统自带 Bash 3.2 跑测试，并覆盖无 flock 时的 mkdir 目录锁回退；
+  apt 作业直接复用 `make verify-apt`（runner 预装 Docker）。
 - `make update`：跨平台一键更新，自动识别 macOS / Linux，汇总各步骤的完成、跳过与失败状态。
   - 系统包：macOS 走 Homebrew（formula + cask），Linux 走 DNF 或 apt-get（两者并存时 dnf 优先）。
   - 跨平台工具：npm、pnpm、Bun、pipx、uv、rustup、Cargo、RubyGems，以及平台对应的 Python 策略。
