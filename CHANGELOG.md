@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-21
+
+首个发布版本。下面的 Changed / Fixed 记录的是 1.0.0 之前的迭代，保留是因为
+其中几条（契约检查的教训、跳过与失败的语义）解释了当前设计为什么长这样。
+
 ### Added
 
 - 站点配置外置：私有 registry、私有 scope 与必备私有 CLI 由 `config.sh` 声明，脚本内不再硬编码。
@@ -59,4 +64,5 @@
 
 - `docs/superpowers/`：一次性的实现计划与设计稿，内容已并入 `docs/` 下的常设文档。
 
-[Unreleased]: https://github.com/guanshan/upkeep/commits/main
+[Unreleased]: https://github.com/guanshan/upkeep/compare/v1.0.0...main
+[1.0.0]: https://github.com/guanshan/upkeep/releases/tag/v1.0.0
