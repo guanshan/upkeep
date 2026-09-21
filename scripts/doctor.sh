@@ -193,10 +193,14 @@ check_rust_ruby() {
         note '未安装 rustup（步骤会跳过）'
     fi
     if command -v cargo >/dev/null 2>&1; then
-        if command -v cargo-install-update >/dev/null 2>&1; then
-            note "cargo：$(tool_version cargo --version)（cargo-update 已就绪）"
-        else
+        if ! command -v cargo-install-update >/dev/null 2>&1; then
             warn 'cargo 已装但缺 cargo-update：Cargo 步骤会跳过（cargo install cargo-update 可启用）'
+        # 只查 helper 是否存在是不够的：cargo-update 22.x 改了参数解析，曾导致
+        # 存在性检查通过、真正执行时报「unexpected argument」。这里核对真实契约。
+        elif cargo install-update --help 2>/dev/null | grep -q -- '--all'; then
+            note "cargo：$(tool_version cargo --version)（cargo-update 已就绪，子命令契约正常）"
+        else
+            warn 'cargo-update 已装但不接受「cargo install-update --all」：Cargo 步骤会失败'
         fi
     else
         note '未安装 Cargo（步骤会跳过）'

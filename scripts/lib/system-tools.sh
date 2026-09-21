@@ -104,7 +104,9 @@ update_cargo() {
         skip_step '未安装 cargo-update（可手动执行 cargo install cargo-update 后重试）'
         return
     fi
-    cargo-install-update --all
+    # 必须走 cargo 的子命令分发。直接执行 cargo-install-update 时，它的顶层解析器
+    # 仍要求 install-update 子命令（cargo-update 22.x 实测），`--all` 会被判为未知参数。
+    cargo install-update --all
 }
 
 resolve_gem_bin() {

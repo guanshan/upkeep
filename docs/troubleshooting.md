@@ -69,6 +69,12 @@ cargo install cargo-update
 
 装完之后该步骤自动生效。
 
+## Cargo 步骤报「unexpected argument '--all' found」
+
+cargo-update 22.x 起，直接执行 `cargo-install-update --all` 会失败：该二进制的顶层解析器仍要求 `install-update` 子命令。正确写法是经 cargo 分发：`cargo install-update --all`。
+
+这个问题在 2026-09-21 修复前一直存在，且 mock 测试全绿——测试里 helper 是假的，而 doctor 当时只检查了命令是否存在，没核对调用契约。现在 doctor 会实际探测 `cargo install-update --help` 是否接受 `--all`，换机器或 cargo-update 大版本升级后先跑一次即可发现同类问题。
+
 ## RubyGems 步骤被跳过
 
 提示「无法确定 RubyGems 用户目录（缺少可用的 ruby）」。用户目录是通过 `ruby -e 'Gem.user_dir'` 解析的。

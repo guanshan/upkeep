@@ -96,9 +96,12 @@ Cargo 步骤需要 `cargo-install-update`，缺失时跳过并提示，不自动
 
 测试全部基于 mock 命令，不触碰真实包管理器。`make doctor` 是独立的只读体检，核对真实工具的版本与关键前提。
 
-mock 测试能验证「代码与自己的假设一致」，验证不了「假设与真实工具一致」。曾有一次评审全绿但真机报错：早期用 `gem env user_gemhome` 解析 RubyGems 用户目录，该子命令需要 RubyGems 3.2 以上，而 macOS 系统自带 3.0。doctor 就是为补这一层而加的，换机器或大版本升级后应当先跑一次。
+mock 测试能验证「代码与自己的假设一致」，验证不了「假设与真实工具一致」。这个缺口已经兑现过两次：
 
-相应地，凡是依赖真实工具输出格式的步骤，都应当在 doctor 里有对应检查项。
+1. 早期用 `gem env user_gemhome` 解析 RubyGems 用户目录，该子命令需要 RubyGems 3.2 以上，而 macOS 系统自带 3.0。doctor 就是为补这一层而加的。
+2. Cargo 步骤调 `cargo-install-update --all`，而 cargo-update 22.x 的顶层解析器要求 `install-update` 子命令。mock 里 helper 是假的所以测试全绿，doctor 当时也只检查命令存在性，于是一路漏到真机。
+
+第二次的教训是：**存在性检查不算契约检查**。凡是依赖真实工具的输出格式或参数约定的步骤，doctor 里的检查项都应当实际探一次该约定（例如核对 `--help` 是否列出所用的参数），而不只是 `command -v`。
 
 ## 以 bash 3.2 为下限
 

@@ -107,7 +107,28 @@ test_cargo_updates_with_existing_helper() (
     MOCK_CARGO_LIST=$'ripgrep v14.1.1:\n    rg\n'
     run_update
     assert_status 0 "$RUN_STATUS" || exit
-    assert_contains "$RUN_CALLS" 'cargo-install-update --all' || exit
+    assert_contains "$RUN_CALLS" 'cargo install-update --all' || exit
+)
+
+# 回归：cargo-update 22.x 起，直接执行 cargo-install-update 会把 --all 判为未知参数，
+# 必须经 cargo 的子命令分发。
+test_cargo_never_invokes_helper_binary_directly() (
+    create_fixture
+    enable_tools cargo cargo-install-update
+    MOCK_CARGO_LIST=$'ripgrep v14.1.1:\n    rg\n'
+    run_update
+    assert_status 0 "$RUN_STATUS" || exit
+    assert_not_contains "$RUN_CALLS" 'cargo-install-update --all' || exit
+)
+
+test_cargo_update_failure_is_reported() (
+    create_fixture
+    enable_tools cargo cargo-install-update
+    MOCK_CARGO_LIST=$'ripgrep v14.1.1:\n    rg\n'
+    MOCK_CARGO_UPDATE_STATUS='2'
+    run_update
+    assert_nonzero "$RUN_STATUS" || exit
+    assert_contains "$RUN_OUTPUT" 'Cargo 全局包：失败' || exit
 )
 
 test_rubygems_uses_user_directory_without_sudo() (
@@ -142,5 +163,7 @@ run_test system 'DNF wins over apt when both exist' test_dnf_wins_when_both_mana
 run_test system 'Linux without system manager is skipped' test_linux_without_system_manager_is_skipped
 run_test system 'Cargo without helper is skipped' test_cargo_without_helper_is_skipped
 run_test system 'Cargo updates with existing helper' test_cargo_updates_with_existing_helper
+run_test system 'Cargo never invokes the helper binary directly' test_cargo_never_invokes_helper_binary_directly
+run_test system 'Cargo update failure is reported' test_cargo_update_failure_is_reported
 run_test system 'RubyGems uses user directory' test_rubygems_uses_user_directory_without_sudo
 run_test system 'RubyGems without usable ruby is skipped' test_rubygems_without_usable_ruby_is_skipped

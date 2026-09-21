@@ -104,6 +104,8 @@ case "$name" in
     cargo)
         if [[ "${1:-} ${2:-}" == 'install --list' ]]; then
             printf '%s' "${MOCK_CARGO_LIST:-}"
+        elif [[ "${1:-}" == 'install-update' ]]; then
+            exit "${MOCK_CARGO_UPDATE_STATUS:-0}"
         fi
         ;;
     brew)

@@ -42,6 +42,10 @@
 
 ### Fixed
 
+- Cargo 步骤改用 `cargo install-update --all`：cargo-update 22.x 的顶层解析器要求
+  `install-update` 子命令，原先直接执行 `cargo-install-update --all` 会报
+  「unexpected argument」。doctor 相应改为实际探测该参数是否被接受，而不只是检查
+  命令存在——存在性检查不算契约检查。
 - 两个内核锁用例在没有 `flock` 的宿主机（macOS）上从失败改为跳过，`make test` 不再开箱即红。
 - 移除 CHANGELOG 与 README 中的占位链接，指向真实仓库地址。
 
