@@ -1,112 +1,116 @@
-# 设计决策
+# Design decisions
 
-记录安全边界背后的取舍。每条都说明拒绝了什么、为什么，以及代价。改动这些行为前先读对应条目。
+*[中文版](decisions.zh-CN.md)*
 
-贯穿全文的一条原则：**这个脚本会在无人值守的情况下跑完十来个包管理器。任何「多半没事」的操作，乘以执行次数之后都不可接受。** 拿不准时宁可跳过并说明，也不替人做决定。
+The reasoning behind the safety boundaries. Each entry states what was refused, why, and what it costs. Read the relevant one before changing that behaviour.
 
-## 不用 sudo 更新 Python 包
+One principle runs through all of them: **this script runs a dozen package managers unattended.** Anything that is "probably fine" becomes unacceptable once multiplied by how often it runs. When in doubt, skip and say so rather than deciding on the user's behalf.
 
-pip 不走 sudo，一次都没有。macOS 上先试可写的安装目录，其次用户 site，两者都不可用就跳过。
+## No sudo for Python packages
 
-`sudo pip install` 会把包装进系统 Python 的目录，与系统包管理器争夺同一批文件，是把发行版环境搞坏的经典方式。PEP 668 的 `EXTERNALLY-MANAGED` 标记正是为阻止这件事而存在，`--break-system-packages` 则是明确的绕过手段，因此也不用。
+pip never runs under sudo. On macOS it tries a writable install directory first, then the user site, and skips if neither works.
 
-代价：受保护环境下该步骤永远跳过。这是刻意的——命令行工具应该交给 pipx 或 uv，项目依赖应该进虚拟环境，两者都有独立步骤覆盖。
+`sudo pip install` drops files into the system Python's directories, competing with the system package manager over the same files. It is the classic way to break a distribution. PEP 668's `EXTERNALLY-MANAGED` marker exists precisely to stop it, and `--break-system-packages` is the explicit way around that marker — so it is never used either.
 
-`run_with_sudo` 目前只被系统包管理器调用，且只接受已确认存在的绝对可执行路径。RubyGems 同理走用户目录，不走 sudo。
+The cost: in a protected environment the step always skips. That is intended. Command-line tools belong to pipx or uv, project dependencies belong in a virtualenv, and both have their own steps.
 
-## Linux 不批量更新系统 Python
+`run_with_sudo` is called only by system package managers, and only ever with an absolute executable path that has been confirmed to exist. RubyGems likewise goes through the user directory, never sudo.
 
-Linux 上只更新当前已激活虚拟环境里的顶层、非 editable 过期包，更新后执行 `pip check`。没有激活虚拟环境时不调用系统 pip。
+## No bulk updates of the Linux system Python
 
-发行版的系统 Python 由包管理器管理，批量 `pip install --upgrade` 会让两套管理体系状态不一致。限定在「顶层」是因为更新传递依赖容易破坏其他包的版本约束，`--upgrade-strategy only-if-needed` 和事后 `pip check` 都是为此。
+On Linux only top-level, non-editable outdated packages in the *currently activated* virtualenv are updated, followed by `pip check`. With no virtualenv active, the system pip is not invoked at all.
 
-macOS 与 Linux 在这里策略不同：macOS 的 python3 通常是 Homebrew 或独立安装，不承载系统功能，风险模型不一样。
+A distribution's system Python is owned by its package manager; a bulk `pip install --upgrade` leaves the two management systems disagreeing about the same files. Restricting to top-level packages avoids breaking other packages' version constraints through transitive updates — `--upgrade-strategy only-if-needed` and the follow-up `pip check` are there for the same reason.
 
-## 不执行 autoremove 和 brew cleanup
+macOS is treated differently on purpose: its `python3` is usually Homebrew or a standalone install, carries no system functionality, and has a different risk profile.
 
-DNF 带 `--noautoremove`，apt 带 `--no-remove`，Homebrew 设 `HOMEBREW_NO_INSTALL_CLEANUP=1`。
+## No autoremove, no brew cleanup
 
-这三个操作都是删除动作，判断依据是包管理器的依赖图。依赖图在手动装过包、用过 `--nodeps`、或跨发行版升级之后并不总是准确，误删的代价远大于省下的磁盘空间。清理磁盘是独立意图，应该单独执行并当场确认，不该搭更新的便车。
+DNF gets `--noautoremove`, apt gets `--no-remove`, Homebrew gets `HOMEBREW_NO_INSTALL_CLEANUP=1`.
 
-`make clean-docker` 是唯一的清理入口，且只动构建缓存和无标签的悬空镜像，不碰有标签的镜像、容器、卷和网络。
+All three are deletion operations driven by the package manager's dependency graph. That graph is not always accurate after packages have been installed by hand, after `--nodeps`, or across a distribution upgrade — and the cost of deleting the wrong thing far exceeds the disk space saved. Reclaiming disk is a separate intention that deserves its own command and its own confirmation; it should not ride along with an update.
 
-## 不强制退出正在运行的应用与服务
+`make clean-docker` is the one cleanup entry point, and it only touches build cache and untagged dangling images — never tagged images, containers, volumes or networks.
 
-macOS 设 `HOMEBREW_NO_UPGRADE_QUIT_CASKS=1`，不强退正在运行的 cask 应用。Linux 设 `NEEDRESTART_MODE=l`，needrestart 只列出需要重启的服务，不自动重启。
+## Nothing running is force-quit or restarted
 
-后台跑的更新没有资格决定终止用户正在用的编辑器，或重启正在服务请求的进程。代价是部分 cask 会因应用运行中而升级失败，以及 apt 升级后可能需要手动重启服务——这两件事都会出现在输出里，由人来决定何时处理。
+macOS sets `HOMEBREW_NO_UPGRADE_QUIT_CASKS=1`, so running cask apps are not force-quit. Linux sets `NEEDRESTART_MODE=l`, so needrestart lists the services that want a restart instead of restarting them.
 
-## apt 保留本机已改过的配置文件
+An update running in the background has no business terminating the editor someone is typing in, or restarting a process that is serving requests. The cost is that some casks fail to upgrade while their app is running, and that an apt upgrade may leave services needing a manual restart. Both show up in the output, where a human can decide when to deal with them.
 
-apt 路径固定带 `-o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef`。
+## apt keeps locally modified config files
 
-dpkg 遇到被本机改过的配置文件时默认会交互式询问，无人值守场景下会卡住。两个选项里 `confold` 保留本机版本，`confdef` 处理其余分支。选择保留而非覆盖，是因为覆盖会静默丢掉本机配置，而保留最坏只是错过新的默认值，后者可以事后补，前者不能。
+The apt path always passes `-o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef`.
 
-同时用 `apt-get` 而不是 `apt`：apt 自己声明其命令行接口不保证在脚本之间保持稳定，apt-get 才是稳定契约。
+When dpkg finds a config file that was modified locally it asks interactively by default, which hangs an unattended run. Of the two options, `confold` keeps the local version and `confdef` handles the remaining branches. Keeping rather than overwriting is the right default because overwriting silently discards local configuration, whereas keeping merely misses a new default — the second is recoverable afterwards, the first is not.
 
-## sudo 只透传白名单环境变量
+`apt-get` is used rather than `apt`: apt states that its own command-line interface is not guaranteed to be stable between versions, so apt-get is the contract to write against.
 
-`run_with_sudo` 支持 `--preserve-env=VAR[,VAR...]` 前缀，apt 用它传 `DEBIAN_FRONTEND` 和 `NEEDRESTART_MODE`。
+## sudo passes only an allowlist of environment variables
 
-sudo 默认 `env_reset`，会丢弃调用方环境，这个默认值是对的。需要个别变量时按名字放行，而不是整体 `--preserve-env`——后者会把当前 shell 的全部环境带进特权进程，包括各种代理、TLS 和路径设置。
+`run_with_sudo` accepts a `--preserve-env=VAR[,VAR...]` prefix, which apt uses for `DEBIAN_FRONTEND` and `NEEDRESTART_MODE`.
 
-## 不隐式编译辅助工具
+sudo resets the environment by default, and that default is correct. When individual variables are genuinely needed, they are allowlisted by name rather than passed wholesale with a bare `--preserve-env`, which would carry the entire current shell environment — proxies, TLS settings, PATH manipulation and all — into a privileged process.
 
-Cargo 步骤需要 `cargo-install-update`，缺失时跳过并提示，不自动 `cargo install cargo-update`。
+## Nothing is compiled implicitly
 
-装这个工具要编译数分钟。一条「更新本地包」的命令突然开始长时间编译，既不符合预期，也无法从输出中区分是卡住还是在干活。提示之后由人决定装不装。
+The Cargo step needs `cargo-install-update`. When it is missing the step skips with a hint instead of running `cargo install cargo-update`.
 
-## 站点配置外置，但允许随仓库带一份默认值
+Installing that helper takes minutes of compilation. A command called "update my local packages" that suddenly starts a long build is both surprising and indistinguishable, from the output, from a hang. After the hint, installing it is the user's call.
 
-私有 registry、私有 scope 与必备内部 CLI 全部由配置文件声明，脚本里不留任何站点专属字面量。查找顺序是 `$UPKEEP_CONFIG` > 用户级 `~/.config/upkeep/config.sh` > 仓库内 `config.sh`。
+## Site config lives outside the code, but a repo may ship a default
 
-这么做首先是为了让同一份代码能同时服务公开仓库和私有部署——此前私有的 registry 与包名写死在入口脚本里，两边每次同步都要手工摘除，既费事又容易漏。更实际的好处是：换 registry、加一个内部 CLI，都不再需要改代码。
+The private registry, private scopes and required internal CLIs are all declared in a config file; no site-specific literal remains in the scripts. Lookup order is `$UPKEEP_CONFIG` > `~/.config/upkeep/config.sh` > `config.sh` in the repo root.
 
-「仓库内 `config.sh`」这一级正是为私有部署准备的：它随仓库提交，clone 下来 `make update` 就能用，不需要任何额外步骤。公开仓库不提交这个文件，只提供 `config.example.sh`。于是两边的差异收敛成一个数据文件加一份流水线配置，代码完全一致。
+The first reason is that it lets one codebase serve both a public repository and a private deployment. Previously the private registry and package names were hard-coded in the entry script, so every sync between the two meant stripping them out by hand — tedious and easy to get wrong. The practical benefit is smaller and more immediate: changing a registry or adding an internal CLI no longer means editing code.
 
-配置文件是被 `source` 的 Bash 片段，等同于可信代码——`source` 本身就已经交出了控制权，所以加载后的校验只用于及早发现笔误（registry 写成 `ftp://`、scope 漏了 `@`、包名里带空格），不是安全边界。
+The "config.sh in the repo root" level exists for private deployments: committed alongside the code, it makes `make update` work straight after a clone with no extra steps. A public repository does not commit it and ships `config.example.sh` instead. The difference between the two repos collapses to one data file plus one CI config, with identical code.
 
-一个刻意的不对称：`UPKEEP_CONFIG` 显式指向的文件不存在时**报错退出**，而自动发现的路径不存在时静默跳过。显式指定表达的是「我知道它在哪」，此时静默回退到别的配置或无配置，会让一个路径笔误表现为「更新好像跑了但私有包没更新」，这是最难排查的一类问题。
+The config file is a Bash fragment that gets sourced, which makes it trusted code — `source` has already handed over control. The validation applied after loading therefore only catches typos (a registry written as `ftp://`, a scope missing its `@`, a package name with a space in it). It is not a security boundary.
 
-## 只自动安装少数必备工具
+One asymmetry is deliberate: a path given explicitly through `$UPKEEP_CONFIG` that does not exist is an **error**, while an auto-discovered path that does not exist is silently skipped. Naming a path explicitly means "I know where it is"; silently falling back to a different config, or to none, would make a typo in that path present itself as "the update seemed to run but my private packages were not updated" — among the hardest things to diagnose.
 
-自动安装的只有两类：`PRIVATE_NPM_PACKAGES` 里声明的必备私有 CLI，以及 macOS 上缺失的 pipx。
+## Only a small set of tools is installed automatically
 
-前者由站点配置决定，不写在代码里，`npm install` 对已装包等价于更新，所以补装和更新合并成一步处理。后者是因为 pipx 本身就是其他工具的安装载体，缺了它整条 Python 命令行工具链都更新不了；Linux 上则只更新已装的 pipx，因为发行版通常有自己的打包方式。
+Two things are installed automatically: the required private CLIs listed in `PRIVATE_NPM_PACKAGES`, and pipx on macOS when it is missing.
 
-`PRIVATE_NPM_SCOPES` 刻意不具备补装能力：它只改变「已装的包怎么更新」。让一个 scope 匹配就触发安装，等于把整个私有 scope 变成隐式的安装清单，与「更新脚本不负责装机」相悖。
+The first is decided by site config rather than code, and since `npm install` is equivalent to an update for an already-installed package, installing and updating collapse into one step. The second is because pipx is itself the carrier for other tools — without it the whole Python CLI chain cannot be updated. On Linux only an already-installed pipx is updated, since distributions usually package it themselves.
 
-除此之外，未安装的工具一律跳过。更新脚本的职责是更新，不是装机。
+`PRIVATE_NPM_SCOPES` deliberately cannot install anything; it only changes *how installed packages are updated*. Letting a scope match trigger an install would turn an entire private scope into an implicit provisioning list, which contradicts the rule below.
 
-## 失败后继续，最后统一汇总
+Everything else that is not installed is simply skipped. This is an updater, not a provisioner.
 
-单个步骤失败不中断整体，剩余步骤照常执行，结束时汇总所有状态并以非 0 退出。
+## Keep going after a failure, summarise at the end
 
-十来个步骤之间互相独立，npm 的网络问题没有理由阻止 rustup 更新。一次跑完再看完整汇总，比失败一次修一次重跑一次高效得多。退出码保证在脚本里调用时不会把失败当成功。
+A failing step does not stop the run. The remaining steps execute, all states are summarised at the end, and the process exits non-zero.
 
-## 并发锁按平台选实现
+The dozen steps are independent of one another; an npm network problem is no reason to stop rustup from updating. Running everything once and reading a complete summary beats fix-one-rerun-fail-again. The exit code ensures a failure is not mistaken for success when the script is called from another script.
 
-有 `flock` 用内核锁，没有则回退 `mkdir` 原子目录锁。
+## The lock implementation follows the platform
 
-内核锁在进程退出时由内核释放，Ctrl-C 和 `kill` 都不会残留，是更好的方案。但 macOS 不带 `flock(1)`，回退路径因此必须存在：目录锁内记录 PID，发现持有者已退出则自愈回收，并注册信号清理。`kill -9` 仍可能残留，此时报错会给出锁路径，让人能直接处理。
+With `flock`, a kernel lock. Without it, an atomic `mkdir` directory lock.
 
-锁目录会校验属主和权限位（不允许组和其他用户有权限），并拒绝符号链接，避免锁路径被替换。
+A kernel lock is released by the kernel when the process exits, so neither Ctrl-C nor `kill` leaves anything behind — it is the better mechanism. But macOS does not ship `flock(1)`, so the fallback has to exist: the directory lock records the owner PID, reclaims the lock when that PID is gone, and traps signals for cleanup. `kill -9` can still leave one behind, and the error message then prints the lock path so it can be dealt with directly.
 
-## 用 mock 测试，再用 doctor 补真实契约
+The lock directory is checked for owner and permission bits (no group or other access) and symlinks are rejected, so the lock path cannot be substituted.
 
-测试全部基于 mock 命令，不触碰真实包管理器。`make doctor` 是独立的只读体检，核对真实工具的版本与关键前提。
+## Mock tests, then doctor for the real contract, then containers for apt
 
-mock 测试能验证「代码与自己的假设一致」，验证不了「假设与真实工具一致」。这个缺口已经兑现过两次：
+The test suite runs entirely against mock commands and never touches a real package manager. `make doctor` is a separate read-only check of real tools' versions and preconditions. `make verify-apt` goes one step further for apt.
 
-1. 早期用 `gem env user_gemhome` 解析 RubyGems 用户目录，该子命令需要 RubyGems 3.2 以上，而 macOS 系统自带 3.0。doctor 就是为补这一层而加的。
-2. Cargo 步骤调 `cargo-install-update --all`，而 cargo-update 22.x 的顶层解析器要求 `install-update` 子命令。mock 里 helper 是假的所以测试全绿，doctor 当时也只检查命令存在性，于是一路漏到真机。
+Mock tests verify that the code agrees with its own assumptions. They cannot verify that those assumptions match the real tool. That gap has now been paid for twice:
 
-第二次的教训是：**存在性检查不算契约检查**。凡是依赖真实工具的输出格式或参数约定的步骤，doctor 里的检查项都应当实际探一次该约定（例如核对 `--help` 是否列出所用的参数），而不只是 `command -v`。
+1. An early version resolved the RubyGems user directory with `gem env user_gemhome`, which needs RubyGems 3.2 or newer — macOS ships 3.0. doctor was added to cover this layer.
+2. The Cargo step called `cargo-install-update --all`, but cargo-update 22.x requires the `install-update` subcommand at the binary's top level. The helper is mocked in the tests so they stayed green, and doctor at the time only checked that the command existed, so it reached a real machine unnoticed.
 
-## 以 bash 3.2 为下限
+The lesson from the second one: **an existence check is not a contract check.** For any step that depends on a real tool's output format or argument conventions, the doctor check should probe the convention itself — for instance, confirming that `--help` still lists the flag being used — not just `command -v`.
 
-不使用 `mapfile`、关联数组等 bash 4 以上特性，也不依赖 GNU 专属选项。
+apt is a third case again, because the things most likely to break it (whether sudo accepts `--preserve-env`, whether debconf hangs an unattended upgrade, whether a real upgrade completes under `--no-remove` with `--force-confold`) cannot be observed on a macOS development machine at all. `make verify-apt` runs the real script against real apt in throwaway Debian and Ubuntu containers, as root and as a non-root user through sudo, forcing a genuine package upgrade. It needs Docker and network, which is why it is not part of `make test`.
 
-macOS 自带的是 bash 3.2（受 GPLv3 影响长期不升级），而 upkeep 的主要用途之一就是在 macOS 上一键更新。要求用户先装新版 bash 才能运行一个「保持工具最新」的脚本，是本末倒置。
+## bash 3.2 is the floor
 
-代价是若干写法比较啰嗦，具体约束见 [架构说明](architecture.md) 末节。
+No `mapfile`, no associative arrays, no other bash 4+ features, and no GNU-only options.
+
+macOS ships bash 3.2 (frozen there for GPLv3 reasons), and running on macOS is one of upkeep's main use cases. Requiring a newer bash before you can run a script whose job is keeping your tools current would be backwards.
+
+The cost is that several constructs are more verbose than they need to be. The specific constraints are at the end of [Architecture](architecture.md).

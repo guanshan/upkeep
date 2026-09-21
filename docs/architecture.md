@@ -1,100 +1,102 @@
-# 架构说明
+# Architecture
 
-upkeep 是一个入口脚本加五个 lib 模块的 Bash 程序。本文说明模块划分，以及模块之间靠全局变量通信的隐式约定——后者是改动时最容易破坏的部分。
+*[中文版](architecture.zh-CN.md)*
 
-## 文件布局
+upkeep is one entry script plus six lib modules. This page covers how they are split up and — more importantly — the implicit contract they use to talk to each other through global variables. That contract is the easiest thing to break.
+
+## Layout
 
 ```
-Makefile                      # 对外入口，所有命令的唯一来源
+Makefile                      # the only public entry point
 scripts/
-  update-local-packages.sh    # make update：站点配置、共享状态声明、步骤编排
-  doctor.sh                   # make doctor：只读体检，独立程序，不加载 lib
-  clean-docker-cache.sh       # make clean-docker：独立程序，不加载 lib
+  update-local-packages.sh    # make update: shared state, step orchestration
+  doctor.sh                   # make doctor: read-only health check
+  clean-docker-cache.sh       # make clean-docker: standalone, loads no lib
+  verify-apt-container.sh     # make verify-apt: real apt contract, in containers
   lib/
-    site-config.sh            # 站点配置：查找、加载与校验，doctor 也复用它
-    step-runner.sh            # 步骤执行器：跳过标记、特权执行、结果汇总
-    lock.sh                   # 并发锁：flock 优先，mkdir 回退
-    node-tools.sh             # npm、pnpm、Bun
-    python-tools.sh           # pipx、uv、pip、虚拟环境
-    system-tools.sh           # 系统包、rustup、Cargo、RubyGems
+    site-config.sh            # site config: lookup, loading, validation
+    step-runner.sh            # step executor: skip flag, sudo, result summary
+    lock.sh                   # concurrency lock: flock, falling back to mkdir
+    node-tools.sh             # npm, pnpm, Bun
+    python-tools.sh           # pipx, uv, pip, virtualenvs
+    system-tools.sh           # system packages, rustup, Cargo, RubyGems
   tests/
-    update-local-packages.test.sh   # 测试入口：加载框架与夹具，按域执行用例
-    clean-docker-cache.test.sh      # 独立测试，自带断言
-    lib/harness.sh                  # 计数器、断言、用例执行器
-    lib/fixture.sh                  # 隔离的运行目录与被测脚本的调用封装
-    fixtures/command-driver.sh      # mock 命令驱动，独立成文件以纳入 shellcheck
-    cases/*.test.sh                 # 按域分组的用例：cli、config、lock、system、node、python、flow
+    update-local-packages.test.sh   # entry: loads harness and fixtures, runs cases
+    clean-docker-cache.test.sh      # standalone, brings its own assertions
+    lib/harness.sh                  # counters, assertions, test runner
+    lib/fixture.sh                  # isolated run dir, call wrapper
+    fixtures/command-driver.sh      # mock command driver, its own file so shellcheck sees it
+    cases/*.test.sh                 # by domain: cli, config, lock, system, node, python, flow
 ```
 
-测试全部基于 mock 命令，不触碰真实包管理器。用 `TEST_FILTER` 只跑一个域，例如 `TEST_FILTER=node make test-update`。
+Tests run entirely against mock commands and never touch a real package manager. `TEST_FILTER` narrows a run to one domain, e.g. `TEST_FILTER=node make test-update`.
 
-`clean-docker-cache.sh` 完全独立，不加载任何 lib。`doctor.sh` 只加载 `site-config.sh` 一个模块：它不需要步骤编排和并发锁，但配置的查找顺序必须与 `make update` 完全一致，各写一份迟早漂移。
+`clean-docker-cache.sh` is fully standalone. `doctor.sh` loads exactly one module, `site-config.sh`: it needs neither step orchestration nor locking, but its config lookup order has to match `make update` exactly, and two copies of that logic would drift.
 
-## 运行顺序
+## Order of operations
 
-`update-local-packages.sh` 的 `main()` 是全部控制流：
+`main()` in `update-local-packages.sh` is the whole control flow:
 
-1. `parse_args`：只接受 `--help` / `-h`，其余参数以状态码 2 退出。
-2. `detect_platform`：`uname -s` 映射到 `PLATFORM`（`macos` 或 `linux`），其他系统直接失败退出。同时检测到 `NODE_TLS_REJECT_UNAUTHORIZED=0` 会就地恢复 TLS 校验。
-3. `acquire_lock`：取得并发锁，失败则整体退出。
-4. 依次 `run_step`：系统包按平台分流，其余工具链共用。
-5. `print_summary`，并以失败计数决定退出码。
+1. `parse_args` — accepts only `--help` / `-h`; anything else exits with status 2.
+2. `load_site_config` — resolves and loads the site config; a failure here exits before anything is updated.
+3. `detect_platform` — maps `uname -s` onto `PLATFORM` (`macos` or `linux`) and refuses anything else. It also restores TLS verification for this process if `NODE_TLS_REJECT_UNAUTHORIZED=0` is set.
+4. `acquire_lock` — takes the concurrency lock, or exits.
+5. `run_step` for each step — system packages branch on the platform, the rest are shared.
+6. `print_summary`, with the exit code decided by the failure count.
 
-模块用一个 `for` 循环按固定顺序 source：`site-config`、`step-runner`、`lock`、`node-tools`、`python-tools`、`system-tools`。`site-config` 必须排在最前——它声明的 `PRIVATE_NPM_*` 会被 `node-tools` 读取；其余模块之间没有依赖顺序要求，但 `step-runner` 提供的原语被大家调用，排前面更直观。
+Modules are sourced by a `for` loop in a fixed order: `site-config`, `step-runner`, `lock`, `node-tools`, `python-tools`, `system-tools`. `site-config` must come first — the `PRIVATE_NPM_*` variables it declares are read by `node-tools`. The rest have no ordering requirement, but `step-runner` provides primitives everyone calls, so it reads better near the front.
 
-配置的实际加载发生在 `main()` 里、`detect_platform` 之前：加载失败就整体退出，不做任何更新。
+## The shared-state contract
 
-## 共享状态契约
+Modules do not pass state through arguments and return values. They read and write a set of globals declared by the entry script. Anything new has to respect this table.
 
-模块不通过参数和返回值传递状态，而是读写入口脚本声明的一组全局变量。新增或修改模块时必须遵守下表。
-
-| 变量 | 声明位置 | 写入方 | 读取方 |
+| Variable | Declared in | Written by | Read by |
 | --- | --- | --- | --- |
-| `PLATFORM` | 入口脚本 | `detect_platform` | `lock.sh`、`python-tools.sh` |
-| `STEP_DETAIL` | 入口脚本 | 各步骤函数、`skip_step` | `run_step` |
-| `STEP_SKIPPED` | 入口脚本 | `skip_step`、`run_step` | `run_step`、`update_pipx` |
-| `RESULT_LABELS` / `RESULT_STATES` / `RESULT_DETAILS` | 入口脚本 | `run_step` | `print_summary` |
-| `FAILURE_COUNT` | 入口脚本 | `run_step` | `main` |
-| `LOCK_PATH` / `LOCK_ACQUIRED` | 入口脚本 | `lock.sh` | `lock.sh` |
-| `PIPX_RUNNER` | 入口脚本 | `ensure_pipx` | `update_pipx` |
-| `PRIVATE_NPM_REGISTRY` / `PRIVATE_NPM_SCOPES` / `PRIVATE_NPM_PACKAGES` / `SITE_CONFIG_PATH` | `site-config.sh` | `load_site_config`（读站点配置文件） | `node-tools.sh`、`doctor.sh` |
+| `PLATFORM` | entry script | `detect_platform` | `lock.sh`, `python-tools.sh` |
+| `STEP_DETAIL` | entry script | step functions, `skip_step` | `run_step` |
+| `STEP_SKIPPED` | entry script | `skip_step`, `run_step` | `run_step`, `update_pipx` |
+| `RESULT_LABELS` / `RESULT_STATES` / `RESULT_DETAILS` | entry script | `run_step` | `print_summary` |
+| `FAILURE_COUNT` | entry script | `run_step` | `main` |
+| `LOCK_PATH` / `LOCK_ACQUIRED` | entry script | `lock.sh` | `lock.sh` |
+| `PIPX_RUNNER` | entry script | `ensure_pipx` | `update_pipx` |
+| `PRIVATE_NPM_REGISTRY` / `PRIVATE_NPM_SCOPES` / `PRIVATE_NPM_PACKAGES` / `SITE_CONFIG_PATH` | `site-config.sh` | `load_site_config` | `node-tools.sh`, `doctor.sh` |
 
-这套设计的代价是静态检查看不出关联：shellcheck 逐文件分析，会把每一处 `STEP_DETAIL=` 报成「赋值后未使用」。项目根目录的 `.shellcheckrc` 因此统一关闭 SC2034 与 SC2153（后者是测试用例文件读取 `MOCK_*` 时的同类误报），并在文件内注明原因。
+The cost of this design is that static analysis cannot see the connection. shellcheck works one file at a time, so every `STEP_DETAIL=` looks like an assignment that is never used. `.shellcheckrc` at the repo root therefore disables SC2034, and SC2153 for the same reason on the test side (case files read `MOCK_*` variables that `lib/fixture.sh` assigns). Both are documented in that file.
 
-新增步骤的具体写法见 [扩展指南](adding-a-step.md)。
+For how to write a new step, see [Adding a step](adding-a-step.md).
 
-## 步骤状态机
+## The step state machine
 
-`run_step` 把每个步骤函数的行为归到三种状态。判定顺序是先看 `STEP_SKIPPED`，再看退出码：
+`run_step` sorts every step function into one of three states. It checks `STEP_SKIPPED` first, then the exit status:
 
-| 步骤函数的行为 | 汇总里的状态 |
+| What the step function does | State in the summary |
 | --- | --- |
-| 调用 `skip_step '原因'` 后返回 | 跳过 |
-| 返回 0 | 完成 |
-| 返回非 0 | 失败，`FAILURE_COUNT` 加一 |
+| calls `skip_step '<reason>'`, then returns | skipped |
+| returns 0 | done |
+| returns non-zero | failed, `FAILURE_COUNT` incremented |
 
-三点容易踩的地方：
+Three things that catch people out:
 
-- `skip_step` 自身返回 0，所以 `skip_step '未检测到 npm'; return` 这个惯用写法返回的是 0，靠 `STEP_SKIPPED` 而非退出码表达跳过。
-- `run_step` 在调用步骤函数前会清空 `STEP_DETAIL` 和 `STEP_SKIPPED`，步骤函数不需要自己重置。
-- 失败且 `STEP_DETAIL` 为空时，`run_step` 会补上「命令退出状态：N」，所以失败路径至少有一条可读说明。
+- `skip_step` itself returns 0, so the usual `skip_step 'npm not found'; return` returns 0. Skipping is expressed through `STEP_SKIPPED`, not through the exit status.
+- `run_step` clears `STEP_DETAIL` and `STEP_SKIPPED` before calling the step, so step functions do not reset them.
+- On a failure with an empty `STEP_DETAIL`, `run_step` fills in the exit status, so a failed step always carries at least one readable line.
 
-「跳过」表示环境不具备该条件，不计入失败。工具未安装、PEP 668 保护、corepack shim 未激活都归到这一类，这是安全边界的一部分，而不是降级处理。
+*Skipped* means the environment does not meet a precondition, and it never counts as a failure. A missing tool, a PEP 668 environment and an inactive corepack shim all land here. That is part of the safety boundary, not a degraded mode.
 
-## 并发锁
+## The concurrency lock
 
-`acquire_lock` 先用 `prepare_lock_directory` 选定目录（依次尝试 `XDG_RUNTIME_DIR`、`XDG_STATE_HOME/upkeep`、`$HOME/.local/state/upkeep`），校验属主与权限位后，再按宿主机能力二选一：
+`acquire_lock` first picks a directory through `prepare_lock_directory` (trying `XDG_RUNTIME_DIR`, then `XDG_STATE_HOME/upkeep`, then `$HOME/.local/state/upkeep`) and checks its owner and permission bits. It then branches on what the host can do:
 
-- 有 `flock`（Linux 自带）：用内核文件锁。进程无论以何种方式退出，内核都会释放，不残留。
-- 无 `flock`（macOS）：回退 `mkdir` 原子目录锁，锁内写入 PID。发现锁时若 PID 已退出则自愈回收，并注册 `EXIT`、`INT`、`TERM`、`HUP` 清理。`kill -9` 仍可能残留，此时报错会给出锁路径。
+- **With `flock`** (standard on Linux): a kernel file lock. However the process exits, the kernel releases it, so nothing is left behind.
+- **Without `flock`** (macOS): an atomic `mkdir` lock with the owner PID written inside. A lock whose PID is gone is reclaimed, and `EXIT`, `INT`, `TERM` and `HUP` are trapped for cleanup. `kill -9` can still leave one behind, and the error message then prints the lock path.
 
-两条路径的行为差异是平台能力决定的，不是可配置项。测试里的两个内核锁用例在没有 `flock` 的宿主机上会跳过，只有 Linux 上的流水线真正执行。
+The difference is dictated by the platform, not configurable. The two kernel-lock test cases skip on a host without `flock`, so only CI on Linux actually exercises them.
 
-## Bash 3.2 约束
+## Bash 3.2 constraints
 
-macOS 自带 bash 3.2，项目以此为下限，不使用更高版本的特性：
+macOS ships bash 3.2 and the project treats that as the floor:
 
-- 不用 `mapfile` / `readarray`，读取多行结果一律 `while IFS= read -r`。
-- 不用关联数组，结果汇总用三个下标对齐的普通数组。
-- `set -u` 下展开可能为空的数组要写成 `${arr[@]+"${arr[@]}"}`，直接写 `"${arr[@]}"` 会报未绑定变量。
-- 不依赖 GNU 专属选项，例如 `readlink -f`、`stat -c` 在 macOS 上都不可用，需要分平台处理或改用纯 Bash 实现。
+- No `mapfile` / `readarray`. Multi-line output is read with `while IFS= read -r`.
+- No associative arrays. The summary uses three index-aligned plain arrays.
+- Under `set -u`, a possibly-empty array must be expanded as `${arr[@]+"${arr[@]}"}`; a bare `"${arr[@]}"` raises an unbound variable error.
+- No GNU-only options. `readlink -f` and `stat -c` do not exist on macOS, so those need a per-platform branch or a pure-Bash equivalent.

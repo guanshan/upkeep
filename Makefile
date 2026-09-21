@@ -6,6 +6,7 @@ UPDATE_TEST := $(ROOT_DIR)scripts/tests/update-local-packages.test.sh
 CLEAN_DOCKER_SCRIPT := $(ROOT_DIR)scripts/clean-docker-cache.sh
 CLEAN_DOCKER_TEST := $(ROOT_DIR)scripts/tests/clean-docker-cache.test.sh
 DOCTOR_SCRIPT := $(ROOT_DIR)scripts/doctor.sh
+VERIFY_APT_SCRIPT := $(ROOT_DIR)scripts/verify-apt-container.sh
 SHELL_SOURCES := $(wildcard \
 	$(ROOT_DIR)scripts/*.sh \
 	$(ROOT_DIR)scripts/lib/*.sh \
@@ -15,7 +16,7 @@ SHELL_SOURCES := $(wildcard \
 	$(ROOT_DIR)scripts/tests/fixtures/*.sh)
 
 .PHONY: update update-help doctor clean-docker test-update test-clean-docker test \
-	lint shellcheck fmt-check fmt
+	lint shellcheck fmt-check fmt verify-apt
 
 update:
 	@"$(UPDATE_SCRIPT)"
@@ -36,6 +37,11 @@ test-clean-docker:
 	@bash "$(CLEAN_DOCKER_TEST)"
 
 test: test-update test-clean-docker
+
+# apt 的真机契约验证：在一次性容器里跑真实 apt，需要 Docker 与网络。
+# 不进 make test，因为 test 必须离线可跑且不依赖外部服务。
+verify-apt:
+	@"$(VERIFY_APT_SCRIPT)"
 
 lint: shellcheck fmt-check
 

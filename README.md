@@ -30,6 +30,7 @@ make doctor        # read-only health check; verifies real tool contracts, chang
 make clean-docker  # prune Docker build cache and dangling images
 make test-update   # run the updater test suite
 make test          # run all tests
+make verify-apt    # verify the apt path against real Debian/Ubuntu containers
 make lint          # shellcheck + shfmt
 make fmt           # rewrite files in place with shfmt
 ```
@@ -117,4 +118,6 @@ npm tolerates a non-zero exit from `npm ls` (extraneous/invalid trees) as long a
 
 Tests use mock commands to cover the macOS / Linux branches, missing tools, failure aggregation and the safety boundaries — they never touch real system packages. Two kernel-lock cases need `flock`, which macOS does not ship, so they are skipped locally and only run in CI on Linux.
 
-Mocks cannot verify real tool contracts (a RubyGems 3.0 incompatibility slipped through once), so run `make doctor` after switching machines or a major version bump. The apt path has been covered by mock tests but not yet verified against a real Debian/Ubuntu host — run `make doctor` there first.
+Mocks cannot verify real tool contracts — a RubyGems 3.0 incompatibility and a cargo-update CLI change both slipped through — so run `make doctor` after switching machines or a major version bump.
+
+The apt path is additionally verified against real containers (Debian bookworm and Ubuntu 24.04) by `make verify-apt`: as root and as a non-root user through sudo, including a genuine package upgrade whose debconf prompt is answered non-interactively.

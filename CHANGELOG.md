@@ -26,7 +26,12 @@
 - `make lint` / `make fmt`：shellcheck 静态检查与 shfmt 格式检查，配套根目录 `.shellcheckrc`。
 - 并发锁：优先 `flock`（内核在进程退出时自动释放），无 flock 时回退 mkdir 原子锁，带 PID 陈锁自愈与信号清理。
 - 测试套件：基于 mock 命令覆盖 macOS / Linux 分支、缺失工具、失败汇总与安全边界。
-- `docs/`：架构说明、扩展指南、故障排查与设计决策四份文档。
+- `docs/`：架构说明、扩展指南、故障排查与设计决策四份文档，中英双语
+  （`*.md` 英文，`*.zh-CN.md` 中文，与 README 的分法一致）。
+- `make verify-apt`：在一次性的 Debian 与 Ubuntu 容器里用真实 apt 验证契约——
+  sudo 是否接受 `--preserve-env`、debconf 会不会卡住无人值守的升级、真实升级在
+  `--no-remove` 加 `--force-confold` 下能否完成。覆盖 root 与非 root 经 sudo
+  两条路径，并强制制造一次真实的软件包升级。需要 Docker 与网络，不属于 `make test`。
 
 ### Changed
 

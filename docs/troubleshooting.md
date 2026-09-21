@@ -1,134 +1,146 @@
-# 故障排查
+# Troubleshooting
 
-按现象查处理办法。出现任何异常，先跑 `make doctor`——它只读，不改任何状态，多数问题在输出里能直接定位。
+*[中文版](troubleshooting.zh-CN.md)*
 
-## 先分清跳过与失败
+Look up the symptom. Whatever the problem, start with `make doctor` — it is read-only, changes nothing, and most issues are visible directly in its output.
 
-汇总里的三种状态含义不同，「跳过」不是故障：
+## First: skipped is not failed
 
-- **跳过**：环境不具备该条件。工具没装、PEP 668 保护、corepack shim 未激活都属于这一类，不计入失败，整体退出码仍是 0。
-- **完成**：执行成功，括号里可能附带补充说明，例如「没有过期的用户 gem」。
-- **失败**：命令返回非 0。整体以非 0 退出，但其余步骤已经继续跑完。
+The three states in the summary mean different things:
 
-## 已有更新任务正在运行
+- **Skipped** — the environment does not meet a precondition. A missing tool, PEP 668, an inactive corepack shim all land here. It does not count as a failure and the overall exit code is still 0.
+- **Done** — the step succeeded. The parenthesis may add detail, e.g. "no outdated user gems".
+- **Failed** — a command returned non-zero. The run exits non-zero, but the remaining steps still ran to completion.
 
-报错里会给出锁路径。先确认确实没有 upkeep 在跑：
+## "An update is already running"
+
+The error prints the lock path. First confirm no upkeep process is actually running:
 
 ```bash
 ps aux | grep update-local-packages
 ```
 
-确认无进程后删除锁：
+Then remove the lock:
 
 ```bash
 rm -rf ~/.local/state/upkeep/upkeep-$UID.lock
 ```
 
-正常退出和 Ctrl-C 都不会留下锁。macOS 上只有 `kill -9` 才可能残留——那条路径用的是 `mkdir` 目录锁，来不及执行清理。Linux 上用的是内核 `flock`，进程消失锁即释放，不存在残留。`make doctor` 的「并发锁」一节会直接报告是否有残留。
+A normal exit and Ctrl-C both clean up after themselves. On macOS only `kill -9` can leave a lock behind — that path uses a `mkdir` directory lock and never gets to run its cleanup. On Linux the kernel `flock` is released the moment the process disappears, so residue is not possible. The "concurrency lock" section of `make doctor` reports whether a stale lock exists.
 
-## pnpm 步骤被跳过
+## The pnpm step is skipped
 
-提示「pnpm 不可用（可能是未激活的 corepack shim）」。`command -v pnpm` 命中的是 Corepack 的 shim，但对应版本还没下载到本地缓存。
+The message is "pnpm unavailable (possibly an inactive corepack shim)". `command -v pnpm` found Corepack's shim, but the corresponding version has not been downloaded into the local cache.
 
-脚本刻意不替它下载：探测时会关掉网络和下载提示，避免 `make update` 卡在交互式确认上。需要真正启用时手动执行一次：
+The script deliberately does not download it: the probe runs with the network and the download prompt disabled, so `make update` cannot hang on an interactive confirmation. To enable it for real, run this once:
 
 ```bash
 corepack prepare pnpm@latest --activate
 ```
 
-若本来就不用 pnpm，这个跳过可以忽略。
+If you do not use pnpm, the skip is harmless.
 
-## Python 包步骤被跳过
+## The Python packages step is skipped
 
-提示「PEP 668 保护当前 Python 环境」。这是环境属性，不是故障。脚本不会使用 `--break-system-packages`，也不会用 sudo 装 Python 包。
+The message mentions PEP 668 protecting the current Python. This is a property of the environment, not a fault. The script will not use `--break-system-packages`, and it will not install Python packages with sudo.
 
-按用途选一条路：
+Pick the route that matches your intent:
 
-- 命令行工具交给 pipx 或 uv 管理，它们各自有独立步骤。
-- 项目依赖放进虚拟环境。Linux 上激活 venv 后再跑 `make update`，脚本会更新该环境的顶层过期包并执行 `pip check`。
+- Command-line tools belong to pipx or uv, each of which has its own step.
+- Project dependencies belong in a virtualenv. On Linux, activate it and then run `make update`; the script updates that environment's top-level outdated packages and runs `pip check`.
 
-另一种跳过提示是「pip 安装目录不可写且用户 site 不可用」，同样不会退化成 sudo，需要手动确认 Python 安装方式是否符合预期。
+The other skip message — the pip install directory is not writable and the user site is unusable — likewise does not fall back to sudo. Check how that Python was installed.
 
-## uv 自更新失败
+## uv self-update failed
 
-三种情况，汇总里的说明文本可以区分：
+Three cases, distinguishable by the detail text in the summary:
 
-- 「uv 由 Homebrew 管理，自更新由 Homebrew 步骤负责」：预期行为，uv 的版本更新在系统包阶段完成，uv 步骤只更新它管理的工具。
-- 「uv 已是最新版 x.y.z（GitHub API 受限，无需重装）」：本机出口 IP 的 GitHub 匿名 API 限额打满，但当前已是目标版本，无需处理。
-- 「GitHub API 受限，已改用安装脚本更新 uv」：已自动回退到 `https://astral.sh/uv/install.sh` 直链重装，等价于自更新。
+- "uv is managed by Homebrew, self-update handled by the Homebrew step" — expected. uv's own version is updated during the system package step; the uv step only updates the tools uv manages.
+- "uv is already at x.y.z (GitHub API rate-limited, no reinstall needed)" — this machine's egress IP has exhausted the anonymous GitHub API quota, but the installed version is already the target. Nothing to do.
+- "GitHub API rate-limited, updated uv through the install script instead" — it already fell back to `https://astral.sh/uv/install.sh`, which is equivalent to a self-update.
 
-只有在没有 curl、或安装脚本本身失败时才会记为失败。
+Only a missing curl, or a failure of the install script itself, is recorded as a failure.
 
-## Cargo 步骤被跳过
+## The Cargo step is skipped
 
-提示「未安装 cargo-update」。更新 Cargo 全局包需要 `cargo-install-update` 这个辅助工具，而安装它要编译数分钟。更新脚本不做这种隐式的长时间编译，需要时手动装一次：
+The message is that cargo-update is not installed. Updating global Cargo packages needs the `cargo-install-update` helper, and installing that helper takes minutes of compilation. The updater does not start long implicit builds, so install it yourself once:
 
 ```bash
 cargo install cargo-update
 ```
 
-装完之后该步骤自动生效。
+The step then works automatically.
 
-## Cargo 步骤报「unexpected argument '--all' found」
+## The Cargo step fails with "unexpected argument '--all' found"
 
-cargo-update 22.x 起，直接执行 `cargo-install-update --all` 会失败：该二进制的顶层解析器仍要求 `install-update` 子命令。正确写法是经 cargo 分发：`cargo install-update --all`。
+From cargo-update 22.x onwards, running `cargo-install-update --all` directly fails: the binary's top-level parser still expects an `install-update` subcommand. The correct form goes through cargo's dispatch: `cargo install-update --all`.
 
-这个问题在 2026-09-21 修复前一直存在，且 mock 测试全绿——测试里 helper 是假的，而 doctor 当时只检查了命令是否存在，没核对调用契约。现在 doctor 会实际探测 `cargo install-update --help` 是否接受 `--all`，换机器或 cargo-update 大版本升级后先跑一次即可发现同类问题。
+This was broken until 2026-09-21 while the mock tests stayed green — the helper is mocked, and doctor at the time only checked that the command existed, not that the arguments were still accepted. doctor now probes whether `cargo install-update --help` actually lists `--all`, so the same class of drift surfaces after a machine change or a major cargo-update release.
 
-## RubyGems 步骤被跳过
+## The RubyGems step is skipped
 
-提示「无法确定 RubyGems 用户目录（缺少可用的 ruby）」。用户目录是通过 `ruby -e 'Gem.user_dir'` 解析的。
+The message says the RubyGems user directory could not be determined because no usable ruby was found. That directory is resolved with `ruby -e 'Gem.user_dir'`.
 
-这里有过一次教训：早期版本用 `gem env user_gemhome`，该子命令需要 RubyGems 3.2 以上，而 macOS 系统自带的是 3.0，mock 测试全绿但真机报错。`make doctor` 就是为补上这类「假设与真实工具不一致」的检查而加的，换机器或大版本升级后先跑一次。
+There is a lesson behind this: an early version used `gem env user_gemhome`, which requires RubyGems 3.2 or newer, while macOS ships 3.0. The mock tests were green and the real machine failed. `make doctor` exists to cover exactly this gap — run it after switching machines or a major version bump.
 
-## 系统包步骤失败
+## The system packages step fails
 
-**macOS。** `brew update` 或 `brew upgrade` 的报错会原样打印。脚本不执行 `brew cleanup`，也不强制退出正在运行的 cask 应用，因此某些 cask 会因为应用正在运行而升级失败，关掉应用重跑即可。
+**macOS.** Errors from `brew update` or `brew upgrade` are printed verbatim. The script does not run `brew cleanup` and does not force-quit running cask apps, so a cask whose app is running may fail to upgrade — quit the app and run again.
 
-**Linux。** 先看 `make doctor` 的「系统包管理器」一节确认识别到的是 dnf 还是 apt-get；两者都没有时该步骤跳过。非 root 且没有 sudo 会直接失败。
+**Linux.** Check the "system package manager" section of `make doctor` first to see whether dnf or apt-get was detected; if neither exists the step skips. A non-root user without sudo fails outright.
 
-apt 路径上有两个刻意的约束：更新时保留本机已改过的配置文件（`--force-confold`），并且不自动重启服务（`NEEDRESTART_MODE=l` 只列出）。因此升级后可能需要手动重启相关服务，或者重启机器。如果报错提示需要卸载软件包才能升级，那是 `--no-remove` 在起作用——脚本不会替人做卸载决定，需要手动处理。
+The apt path has two deliberate constraints: locally modified config files are kept (`--force-confold`), and services are not restarted automatically (`NEEDRESTART_MODE=l` only lists them). So an upgrade may leave services needing a manual restart, or a reboot. If the error says packages would have to be removed to upgrade, that is `--no-remove` doing its job — the script will not decide to uninstall anything on your behalf.
 
-## 私有包没有按预期更新
+To check the apt path itself against real Debian and Ubuntu containers, run `make verify-apt` (needs Docker and network).
 
-先跑 `make doctor`，「站点配置」一节会直接给出实际加载了哪个文件、registry 与包清单。常见情况：
+## Private packages were not updated as expected
 
-- **显示「未加载站点配置」**：三个来源都没命中。检查 `~/.config/upkeep/config.sh` 是否存在，或仓库根目录有没有 `config.sh`（开源版默认没有，需要从 `config.example.sh` 复制）。
-- **加载的不是预期的那个文件**：查找顺序是 `$UPKEEP_CONFIG` > 用户级配置 > 仓库内 `config.sh`，命中即止。常见原因是 shell 里残留了 `UPKEEP_CONFIG` 导出，或用户级配置盖住了仓库里的。
-- **包更新了但没走私有 registry**：`PRIVATE_NPM_REGISTRY` 留空时使用 npm 当前配置的默认 registry。另外 `PRIVATE_NPM_SCOPES` 只影响「已装的怎么更新」，缺失的包不会因为 scope 匹配就被安装——那是 `PRIVATE_NPM_PACKAGES` 的职责。
+Run `make doctor` first — its "site configuration" section prints exactly which file was loaded, the registry and the package list. The usual causes:
 
-临时不加载任何站点配置：
+- **"No site config loaded"** — none of the three sources matched. Check whether `~/.config/upkeep/config.sh` exists, or whether there is a `config.sh` in the repo root (a public checkout has none by default; copy `config.example.sh`).
+- **The wrong file was loaded** — the order is `$UPKEEP_CONFIG` > user config > repo `config.sh`, first match wins. Usually either a stale exported `UPKEEP_CONFIG` in the shell, or a user config shadowing the repo one.
+- **Packages updated but not through the private registry** — an empty `PRIVATE_NPM_REGISTRY` means npm's configured default is used. Also note that `PRIVATE_NPM_SCOPES` only affects *how installed packages are updated*; a missing package is not installed just because its scope matches. That is what `PRIVATE_NPM_PACKAGES` is for.
+
+To run once without any site config:
 
 ```bash
 UPKEEP_CONFIG= make update
 ```
 
-## 站点配置报错
+## Site config errors
 
-- **「UPKEEP_CONFIG 指向的配置不存在」**：显式指定的路径必须存在。这里刻意不静默回退，避免路径笔误表现为「跑完了但私有包没动」。
-- **「PRIVATE_NPM_REGISTRY 必须是 http(s) 地址」**：只接受 `http://` 或 `https://` 开头，留空表示用 npm 默认 registry。
-- **「PRIVATE_NPM_SCOPES 每项应形如 @scope」**：写 `@acme`，不是 `acme`，也不带 `/`。
-- **「PRIVATE_NPM_PACKAGES 包名无效」**：每项格式为「包名」或「包名|额外的 npm install 参数」，竖线后面才是参数。
+- **"UPKEEP_CONFIG points at a config that does not exist"** — an explicitly named path must exist. There is deliberately no silent fallback, so that a typo does not present itself as "it ran but nothing private was updated".
+- **"PRIVATE_NPM_REGISTRY must be an http(s) address"** — only `http://` or `https://` is accepted; empty means npm's default registry.
+- **"Each PRIVATE_NPM_SCOPES entry should look like @scope"** — write `@acme`, not `acme`, and without a trailing `/`.
+- **"Invalid package name in PRIVATE_NPM_PACKAGES"** — each entry is either `package-name` or `package-name|extra npm install arguments`; the arguments go after the pipe.
 
-## npm 相关
+## npm
 
-**枚举失败仍在装私有包。** 全局树里有 extraneous 或 invalid 的包时 `npm ls` 会非零退出。只要输出可用就继续；即使完全不可用，必备的私有 CLI 也会独立补装，此时步骤记为失败并附说明。
+**Enumeration failed but private packages were still installed.** `npm ls` exits non-zero when the global tree contains extraneous or invalid packages. As long as the output is usable the run continues; even when it is not, the required private CLIs are still installed independently, and the step is recorded as failed with an explanation.
 
-**私有包拉取失败。** 私有包通常不在公网 npm 上，走的是 `PRIVATE_NPM_REGISTRY` 指定的镜像。先用 `make doctor` 确认加载的是哪份配置、registry 是否正确，再检查该 registry 本身是否可达（例如是否需要先连上对应网络）。
+**A private package could not be fetched.** Private packages are usually not on the public npm registry and go through the mirror named by `PRIVATE_NPM_REGISTRY`. Use `make doctor` to confirm which config was loaded and whether that registry is right, then check that the registry itself is reachable (it may require being on a particular network).
 
-**TLS 警告。** 检测到 `NODE_TLS_REJECT_UNAUTHORIZED=0` 时会打印警告并在本次运行内恢复证书校验，只影响当前进程，不改 shell 配置。
+**TLS warning.** When `NODE_TLS_REJECT_UNAUTHORIZED=0` is detected, a warning is printed and certificate verification is restored for the duration of this run only. Your shell configuration is not modified.
 
-## make test 有用例跳过
+## Some test cases are skipped
 
-macOS 上会看到两条：
+On macOS you will see two:
 
 ```
 SKIP [lock] flock mode is used when available（宿主机没有 flock）
 SKIP [lock] flock mode rejects concurrent run（宿主机没有 flock）
 ```
 
-`flock` 是 Linux 自带、macOS 没有的命令，内核锁行为无法在 macOS 上模拟，因此跳过而不是失败。这两个用例由 GitLab 流水线在 Linux 上执行。
+`flock` ships with Linux and not with macOS, and kernel-lock behaviour cannot be simulated, so these skip rather than fail. CI runs them on Linux.
 
-## make lint 报格式问题
+A third one skips wherever the repo has no `config.sh`, which is the normal state of a public checkout:
 
-`make fmt` 就地修复，再跑一次 `make lint`。缺少 shfmt 时格式检查会告警跳过，不阻断；缺少 shellcheck 则直接失败——静态检查缺位时宁可让 lint 红，也不静默放行。
+```
+SKIP [config] repo config is used when nothing else is set
+```
+
+## make lint reports formatting problems
+
+Run `make fmt` to fix them in place, then `make lint` again. Without shfmt the format check warns and skips rather than blocking; without shellcheck lint fails outright — a missing static check should be loud, not silent.
+
+Note that shfmt's layout rules change between versions, and the version in a distribution archive often differs from a developer's. CI installs a pinned release for that reason; if your local shfmt disagrees with CI, check `shfmt --version` against the one pinned in `.github/workflows/ci.yml`.

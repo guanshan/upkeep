@@ -29,6 +29,7 @@ make doctor        # 只读体检：核对真实工具契约与环境，不修�
 make clean-docker  # 清理 Docker 构建缓存与悬空镜像
 make test-update   # 运行更新脚本测试
 make test          # 运行全部测试
+make verify-apt    # 在真实 Debian/Ubuntu 容器里验证 apt 路径
 make lint          # shellcheck 静态检查 + shfmt 格式检查
 make fmt           # 用 shfmt 就地修复格式
 ```
@@ -113,4 +114,6 @@ npm 枚举全局包时容忍 `npm ls` 的非零退出（extraneous/invalid 树�
 
 测试用 mock 命令覆盖 macOS / Linux 分支、缺失工具、失败汇总和安全边界，不会更新真实系统包。其中两个内核锁用例依赖 macOS 不带的 `flock`，本地会跳过，只在 Linux 流水线上执行。
 
-mock 验证不了真实工具契约（历史上曾漏掉 RubyGems 3.0 的兼容问题），换机器或大版本升级后先跑 `make doctor`。apt 路径目前只有 mock 测试覆盖，尚未在真实 Debian/Ubuntu 机器上验证过，首次使用前先在该机器上跑一次 `make doctor`。
+mock 验证不了真实工具契约——RubyGems 3.0 的兼容问题和 cargo-update 的命令行变更都是这样漏掉的——换机器或大版本升级后先跑 `make doctor`。
+
+apt 路径另外由 `make verify-apt` 在真实容器（Debian bookworm 与 Ubuntu 24.04）里验证：root 与非 root 经 sudo 两条路径，并包含一次真实的软件包升级，其 debconf 问答被非交互处理。
