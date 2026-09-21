@@ -9,8 +9,16 @@ skip_step() {
     return 0
 }
 
+# 可选前缀 --preserve-env=VAR[,VAR...]：sudo 默认 env_reset 会丢弃调用方的环境变量，
+# 而 apt 必须让 DEBIAN_FRONTEND 之类抵达子进程。按白名单透传，不放行整个环境。
 run_with_sudo() {
-    local executable="$1"
+    local -a sudo_options=()
+    while [[ "${1:-}" == --preserve-env=* ]]; do
+        sudo_options+=("$1")
+        shift
+    done
+
+    local executable="${1:-}"
     if [[ "$executable" != /* || ! -x "$executable" ]]; then
         STEP_DETAIL="sudo 只接受已确认存在的绝对可执行路径：$executable"
         return 1
@@ -19,7 +27,8 @@ run_with_sudo() {
         STEP_DETAIL='当前操作需要管理员权限，但未检测到 sudo'
         return 1
     fi
-    sudo -- "$@"
+    # bash 3.2 在 set -u 下展开空数组会报未绑定变量，故用 ${arr[@]+"${arr[@]}"}
+    sudo ${sudo_options[@]+"${sudo_options[@]}"} -- "$@"
 }
 
 run_step() {

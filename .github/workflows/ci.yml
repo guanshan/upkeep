@@ -1,5 +1,9 @@
 name: CI
 
+# 这套流水线的独特价值在 macOS runner —— 它用系统自带的 Bash 3.2 跑测试，
+# 同时覆盖没有 flock 时的 mkdir 目录锁回退路径。只有 Linux runner 的流水线测不到这两者，
+# 而 macOS 恰是本项目的主力使用平台。
+
 on:
   push:
     branches:
@@ -35,3 +39,17 @@ jobs:
         env:
           UPDATE_BASH: /bin/bash
         run: make test
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Install shellcheck and shfmt
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends shellcheck shfmt
+      - name: Run lint
+        run: make lint

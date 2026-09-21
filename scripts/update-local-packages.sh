@@ -6,15 +6,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 readonly LIB_DIR="$SCRIPT_DIR/lib"
 
-# ===== 可选配置：私有 npm 包 =====
-PRIVATE_NPM_REGISTRY=''
-PRIVATE_NPM_PACKAGES=()
-UPKEEP_CONFIG="${UPKEEP_CONFIG:-${XDG_CONFIG_HOME:-${HOME:-}/.config}/upkeep/config.sh}"
-if [[ -f "$UPKEEP_CONFIG" ]] && ! source "$UPKEEP_CONFIG"; then
-    printf '错误：无法加载配置 %s\n' "$UPKEEP_CONFIG" >&2
-    exit 1
-fi
-
 # ===== 跨模块共享状态（由 lib/*.sh 读写）=====
 declare -a RESULT_LABELS=()
 declare -a RESULT_STATES=()
@@ -27,7 +18,9 @@ PLATFORM=''
 LOCK_PATH=''
 LOCK_ACQUIRED=0
 
-for lib_module in step-runner lock node-tools python-tools system-tools; do
+# site-config 必须排在最前：它声明的 PRIVATE_NPM_* 会被 node-tools 读取。
+for lib_module in site-config step-runner lock node-tools python-tools system-tools; do
+    # shellcheck disable=SC1090 # 模块路径由循环拼出，shellcheck 无法静态跟随
     if ! source "$LIB_DIR/$lib_module.sh"; then
         printf '错误：无法加载模块 %s\n' "$LIB_DIR/$lib_module.sh" >&2
         exit 1
@@ -41,10 +34,10 @@ usage() {
         '' \
         '平台更新：' \
         '  - macOS：Homebrew formula 与 cask' \
-        '  - Linux：DNF 系统软件包' \
+        '  - Linux：DNF 或 apt-get 系统软件包（按发行版自动选择）' \
         '' \
         '跨平台更新：' \
-        '  - npm、pnpm 与 Bun 全局包（自动补装配置的私有 CLI）' \
+        '  - npm、pnpm 与 Bun 全局包（自动补装站点配置里的私有 CLI）' \
         '  - pipx 管理的 Python 命令行工具' \
         '  - uv 及 uv 管理的命令行工具（GitHub API 受限时改用安装脚本更新）' \
         '  - rustup、Cargo（需已装 cargo-update）与 RubyGems 用户工具' \
@@ -54,6 +47,7 @@ usage() {
         '  - 不会修改任何子项目依赖或 lockfile' \
         '  - 不会批量更新 Linux 系统 Python；PEP 668 环境自动跳过，不使用 sudo pip' \
         '  - 不会执行 autoremove、Homebrew cleanup 或强制审计修复' \
+        '  - apt 保留本机已改过的配置文件，且不自动重启服务' \
         '  - 除配置的私有 CLI 与 macOS pipx 外不安装新软件，不隐式编译辅助工具' \
         '  - 单个步骤失败后继续执行，最后统一汇总并返回非零'
 }
@@ -97,12 +91,13 @@ detect_platform() {
 
 main() {
     parse_args "$@"
+    load_site_config || return 1
     detect_platform || return 1
     acquire_lock || return 1
     if [[ "$PLATFORM" == 'macos' ]]; then
         run_step 'Homebrew 系统软件包' update_homebrew
     else
-        run_step 'DNF 系统软件包' update_dnf
+        run_step 'Linux 系统软件包' update_linux_packages
     fi
     run_step 'npm 全局包' update_npm
     run_step 'pnpm 全局包' update_pnpm

@@ -1,46 +1,6 @@
-PASS_COUNT=0
-FAIL_COUNT=0
-SKIP_COUNT=0
-TEST_TMP="$(mktemp -d)"
-
-cleanup() {
-    rm -rf -- "$TEST_TMP"
-}
-trap cleanup EXIT
-
-fail() {
-    printf '  %s\n' "$1" >&2
-    return 1
-}
-
-assert_status() {
-    local expected="$1"
-    local actual="$2"
-    [[ "$actual" == "$expected" ]] || fail "expected status $expected, got $actual"
-}
-
-assert_nonzero() {
-    local actual="$1"
-    [[ "$actual" -ne 0 ]] || fail 'expected a non-zero status'
-}
-
-assert_contains() {
-    local content="$1"
-    local expected="$2"
-    [[ "$content" == *"$expected"* ]] || fail "missing: $expected"
-}
-
-assert_not_contains() {
-    local content="$1"
-    local unexpected="$2"
-    [[ "$content" != *"$unexpected"* ]] || fail "unexpected: $unexpected"
-}
-
-assert_equals() {
-    local expected="$1"
-    local actual="$2"
-    [[ "$actual" == "$expected" ]] || fail "values differ; expected: $expected; actual: $actual"
-}
+#!/usr/bin/env bash
+# 测试夹具：mock 命令驱动、隔离的运行目录与被测脚本的调用封装。由测试入口加载。
+# 依赖 harness.sh 提供的 TEST_TMP，以及入口声明的 UPDATE_SCRIPT。
 
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "$TEST_TMP/case.XXXXXX")"
@@ -85,10 +45,12 @@ create_fixture() {
     MOCK_PYTHON_VENV='1'
     MOCK_PIP_FAIL_COMMAND=''
     TEST_VIRTUAL_ENV=''
-    TEST_XDG_CONFIG_HOME="$FIXTURE_DIR/home/.config"
     TEST_XDG_RUNTIME_DIR="$RUNTIME_DIR"
     TEST_XDG_STATE_HOME="$FIXTURE_DIR/state"
-    TEST_FLOCK_BIN="${TEST_FLOCK_BIN-$(command -v flock 2>/dev/null || true)}"
+    TEST_XDG_CONFIG_HOME="$FIXTURE_DIR/home/.config"
+    # 空串 = 本次不加载任何站点配置。若不这样兜底，测试会读到仓库自带的 config.sh。
+    # 需要验证自动发现顺序的用例请 unset 它（见 write_private_npm_config）。
+    TEST_UPKEEP_CONFIG=''
     NODE_TLS_REJECT_UNAUTHORIZED=''
 }
 
@@ -108,6 +70,7 @@ create_command_driver() {
     ln -s "$FIXTURE_DIR/command-driver" "$MOCK_BIN/stat"
     ln -s "$FIXTURE_DIR/command-driver" "$MOCK_BIN/id"
 }
+
 enable_tools() {
     local tool
     for tool in "$@"; do
@@ -144,16 +107,33 @@ PYTHON
     chmod +x "$venv_dir/bin/python"
 }
 
-write_private_npm_config() {
-    local registry="${1-https://registry.example.com/npm}"
-    mkdir -p "$FIXTURE_DIR/home/.config/upkeep"
-    printf '%s\n' \
-        "PRIVATE_NPM_REGISTRY='$registry'" \
-        "PRIVATE_NPM_PACKAGES=('@example/cli' '@example/strict|--engine-strict')" \
-        >"$FIXTURE_DIR/home/.config/upkeep/config.sh"
+# UPKEEP_CONFIG 必须能「完全不设置」，才能测到自动发现顺序；环境变量前缀做不到
+# 条件省略，故在外层包一次。测试入口已 unset UPKEEP_CONFIG，避免继承开发者本机的值。
+run_update() {
+    if [[ -n "${TEST_UPKEEP_CONFIG+set}" ]]; then
+        UPKEEP_CONFIG="$TEST_UPKEEP_CONFIG" run_update_impl "$@"
+    else
+        run_update_impl "$@"
+    fi
 }
 
-run_update() {
+# 往夹具的用户级配置目录写一份站点配置，并让脚本走自动发现来命中它。
+write_private_npm_config() {
+    local registry="${1-https://registry.example.com/npm}"
+    local config_dir="$TEST_XDG_CONFIG_HOME/upkeep"
+    mkdir -p "$config_dir"
+    printf '%s\n' \
+        "PRIVATE_NPM_REGISTRY='$registry'" \
+        "PRIVATE_NPM_SCOPES=('@example')" \
+        "PRIVATE_NPM_PACKAGES=('@example/cli' '@example/strict|--engine-strict')" \
+        >"$config_dir/config.sh"
+    unset TEST_UPKEEP_CONFIG
+}
+
+# 这一长串前缀赋值里，右侧的 $MOCK_BIN / $FIXTURE_DIR 取的都是外层 create_fixture 设好的值，
+# 再原样导出给被测脚本；shellcheck 会提醒"同一前缀内的赋值互不可见"，此处正是期望行为。
+# shellcheck disable=SC2097,SC2098
+run_update_impl() {
     PATH="$MOCK_BIN:$CORE_BIN" \
         CALLS_FILE="$CALLS_FILE" \
         FIXTURE_DIR="$FIXTURE_DIR" \
@@ -197,26 +177,4 @@ run_update() {
     RUN_STATUS=$?
     RUN_OUTPUT="$(<"$OUTPUT_FILE")"
     RUN_CALLS="$(<"$CALLS_FILE")"
-}
-run_test() {
-    local group="$1"
-    local name="$2"
-    local function_name="$3"
-    if [[ -n "${TEST_FILTER:-}" && "$group" != "$TEST_FILTER" ]]; then
-        SKIP_COUNT=$((SKIP_COUNT + 1))
-        return
-    fi
-    if "$function_name"; then
-        printf 'PASS [%s] %s\n' "$group" "$name"
-        PASS_COUNT=$((PASS_COUNT + 1))
-    else
-        local status=$?
-        if ((status == 77)); then
-            printf 'SKIP [%s] %s\n' "$group" "$name"
-            SKIP_COUNT=$((SKIP_COUNT + 1))
-            return
-        fi
-        printf 'FAIL [%s] %s\n' "$group" "$name" >&2
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-    fi
 }

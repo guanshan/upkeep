@@ -2,6 +2,17 @@
 # 系统与语言工具链：平台系统包（DNF / Homebrew）、rustup、Cargo、RubyGems。
 # 依赖入口脚本声明的共享状态：STEP_DETAIL；调用 step-runner 的 run_with_sudo / skip_step。
 
+# Linux 发行版按包管理器分流；两者都没有时跳过而非失败（与"缺工具即跳过"一致）。
+update_linux_packages() {
+    if command -v dnf >/dev/null 2>&1; then
+        update_dnf
+    elif command -v apt-get >/dev/null 2>&1; then
+        update_apt
+    else
+        skip_step '未检测到受支持的系统包管理器（dnf 或 apt-get）'
+    fi
+}
+
 update_dnf() {
     local dnf_bin
     if ! dnf_bin="$(command -v dnf)"; then
@@ -15,6 +26,43 @@ update_dnf() {
         return
     fi
     run_with_sudo "$dnf_bin" "${args[@]}"
+}
+
+# 固定用 apt-get：apt(8) 自己声明其命令行接口不保证在脚本间稳定，apt-get 才是稳定契约。
+update_apt() {
+    local apt_bin
+    if ! apt_bin="$(command -v apt-get)"; then
+        skip_step '未检测到 apt-get'
+        return
+    fi
+
+    # upgrade 本身不卸载软件包；--no-remove 让"必须卸载才能升级"的情况直接中止，
+    # 而不是退化成 dist-upgrade 式的自作主张。等价于 DNF 那侧的 --noautoremove。
+    # force-confold 保留本机已改过的配置文件，force-confdef 处理无人值守时的其余分支。
+    local -a refresh_args=(update)
+    local -a upgrade_args=(
+        upgrade --assume-yes --no-remove
+        -o Dpkg::Options::=--force-confdef
+        -o Dpkg::Options::=--force-confold
+    )
+
+    local result=0
+    run_apt "$apt_bin" "${refresh_args[@]}" || result=1
+    run_apt "$apt_bin" "${upgrade_args[@]}" || result=1
+    return "$result"
+}
+
+# DEBIAN_FRONTEND 关掉 debconf 交互问答；NEEDRESTART_MODE=l 只列出需重启的服务，
+# 不自动重启——与 macOS 侧"不强制退出正在运行的 cask 应用"是同一条边界。
+run_apt() {
+    local apt_bin="$1"
+    shift
+    if [[ "$(id -u)" == 0 ]]; then
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l "$apt_bin" "$@"
+        return
+    fi
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l \
+        run_with_sudo --preserve-env=DEBIAN_FRONTEND,NEEDRESTART_MODE "$apt_bin" "$@"
 }
 
 update_homebrew() {

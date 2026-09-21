@@ -6,6 +6,15 @@
 
 set -uo pipefail
 
+DOCTOR_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# 只复用站点配置模块：doctor 不需要步骤编排与并发锁，但配置的查找顺序必须与
+# make update 完全一致，否则两边迟早漂移。
+# shellcheck source=scripts/lib/site-config.sh
+if ! source "$DOCTOR_DIR/lib/site-config.sh"; then
+    printf '错误：无法加载模块 %s\n' "$DOCTOR_DIR/lib/site-config.sh" >&2
+    exit 1
+fi
+
 WARN_COUNT=0
 
 note() {
@@ -72,6 +81,29 @@ check_lock() {
         warn "存在锁残留：$lock_path（若确认无更新进程可手动删除）"
     else
         note "锁路径：${lock_path:-未知}（当前无残留）"
+    fi
+}
+
+check_site_config() {
+    section '站点配置'
+    if ! load_site_config; then
+        warn '站点配置加载失败：make update 会在同一处退出'
+        return
+    fi
+    if [[ -z "$SITE_CONFIG_PATH" ]]; then
+        note '未加载站点配置（不处理任何私有包）'
+        return
+    fi
+    note "配置来源：$SITE_CONFIG_PATH"
+    note "私有 registry：${PRIVATE_NPM_REGISTRY:-未设置（用 npm 默认 registry）}"
+    if ((${#PRIVATE_NPM_SCOPES[@]} > 0)); then
+        note "私有 scope：${PRIVATE_NPM_SCOPES[*]}"
+    fi
+    if ((${#PRIVATE_NPM_PACKAGES[@]} > 0)); then
+        local package_spec
+        for package_spec in "${PRIVATE_NPM_PACKAGES[@]}"; do
+            note "必备私有 CLI：${package_spec%%|*}"
+        done
     fi
 }
 
@@ -196,13 +228,35 @@ check_system_manager() {
             fi
             ;;
         Linux)
+            # 与 update_linux_packages 的分流顺序保持一致：dnf 优先，其次 apt-get。
             if command -v dnf >/dev/null 2>&1; then
                 note "dnf：$(tool_version dnf --version)"
+            elif command -v apt-get >/dev/null 2>&1; then
+                note "apt-get：$(tool_version apt-get --version)"
+                if command -v needrestart >/dev/null 2>&1; then
+                    note 'needrestart 已装：更新时设为只列出，不自动重启服务'
+                fi
             else
-                warn '未检测到 dnf（Linux 系统包步骤会跳过）'
+                warn '未检测到 dnf 或 apt-get（Linux 系统包步骤会跳过）'
+            fi
+            if [[ "$(id -u)" != 0 ]] && ! command -v sudo >/dev/null 2>&1; then
+                warn '非 root 且没有 sudo：系统包步骤会失败'
             fi
             ;;
     esac
+}
+
+check_docker() {
+    section 'Docker'
+    if ! command -v docker >/dev/null 2>&1; then
+        note '未安装 docker（make clean-docker 会报错退出）'
+        return
+    fi
+    if docker system df >/dev/null 2>&1; then
+        note "docker：$(tool_version docker --version)（daemon 可访问）"
+    else
+        warn 'docker 已装但 daemon 不可访问：make clean-docker 会失败'
+    fi
 }
 
 main() {
@@ -210,9 +264,11 @@ main() {
     check_platform
     check_lock
     check_system_manager
+    check_site_config
     check_node_managers
     check_python
     check_rust_ruby
+    check_docker
     printf '\n结论：%d 项警告\n' "$WARN_COUNT"
     ((WARN_COUNT == 0))
 }

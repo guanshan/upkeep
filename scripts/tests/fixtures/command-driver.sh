@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# mock 命令驱动：夹具把它复制一份，再用同名符号链接冒充各个包管理器。
+# 行为由 MOCK_* 环境变量控制，所有调用按原样追加到 $CALLS_FILE 供断言。
+# 独立成文件（而不是内嵌 heredoc）是为了让 shellcheck 与编辑器能真正检查它。
+
 set -u
 
 name="${0##*/}"
@@ -27,6 +31,10 @@ fi
     fi
     if [[ "$name" == 'npm' ]]; then
         printf ' [NODE_TLS_REJECT_UNAUTHORIZED=%s]' "${NODE_TLS_REJECT_UNAUTHORIZED:-}"
+    fi
+    if [[ "$name" == 'apt-get' ]]; then
+        printf ' [DEBIAN_FRONTEND=%s] [NEEDRESTART_MODE=%s]' \
+            "${DEBIAN_FRONTEND:-}" "${NEEDRESTART_MODE:-}"
     fi
     if [[ "$name" == 'gem' ]]; then
         printf ' [GEM_HOME=%s] [GEM_PATH=%s]' "${GEM_HOME:-}" "${GEM_PATH:-}"
@@ -70,6 +78,7 @@ case "$name" in
         elif [[ "${1:-} ${2:-}" == 'self update' ]]; then
             if [[ "${MOCK_UV_EXTERNAL_MANAGER:-}" == '1' ]]; then
                 printf '%s\n' 'error: uv was installed through an external package manager and cannot update itself.' >&2
+                # shellcheck disable=SC2016 # 原样复刻 uv 的提示文本，反引号不应展开
                 printf '%s\n' 'hint: You installed uv using Homebrew. To update uv, run `brew update && brew upgrade uv`' >&2
                 exit 1
             fi
@@ -141,4 +150,3 @@ case "$name" in
 esac
 
 exit 0
-

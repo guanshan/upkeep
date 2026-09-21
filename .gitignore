@@ -12,4 +12,9 @@ Thumbs.db
 # 本地运行产物
 *.log
 scripts/**/tmp/
+
+# 站点配置：默认不进仓库。
+# 需要随仓库分发一份默认配置的部署，用 git add -f 显式提交 config.sh；
+# 已跟踪的文件不受此处影响。
+config.sh
 config.local.sh

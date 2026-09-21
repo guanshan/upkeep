@@ -34,7 +34,7 @@ acquire_lock_with_flock() {
         printf '错误：发现残留的目录锁：%s（确认无更新进程后可手动删除）。\n' "$LOCK_PATH" >&2
         return 1
     fi
-    if [[ -e "$LOCK_PATH" && ( ! -f "$LOCK_PATH" || -L "$LOCK_PATH" || ! -O "$LOCK_PATH" ) ]]; then
+    if [[ -e "$LOCK_PATH" && (! -f "$LOCK_PATH" || -L "$LOCK_PATH" || ! -O "$LOCK_PATH") ]]; then
         printf '错误：锁文件不安全：%s\n' "$LOCK_PATH" >&2
         return 1
     fi

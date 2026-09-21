@@ -1,0 +1,14 @@
+# shellcheck 项目配置（make lint 读取）
+
+# 本项目刻意用一组全局变量在入口脚本与 lib/*.sh 之间传递步骤状态
+# （STEP_DETAIL / STEP_SKIPPED / PLATFORM / RESULT_* 等，见 docs/architecture.md）。
+# shellcheck 逐文件分析，看不到「入口声明、模块读写」这层关系，会把每一处赋值报成未使用。
+disable=SC2034
+
+# 同一根因的另一面：测试用例文件读取的 MOCK_* 变量由 tests/lib/fixture.sh 赋值，
+# 单看用例文件会被当成「可能拼错的变量名」。
+disable=SC2153
+
+# 允许跟随 source 进来的文件，并以脚本自身所在目录为基准解析相对路径。
+external-sources=true
+source-path=SCRIPTDIR
