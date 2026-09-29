@@ -68,7 +68,9 @@ case "$name" in
         fi
         ;;
     ruby)
-        if [[ "${1:-}" == '-rrubygems' ]]; then
+        if [[ "${!#}" == 'default-gems' ]]; then
+            printf '%s' "${MOCK_GEM_DEFAULTS:-}"
+        elif [[ "${1:-}" == '-rrubygems' ]]; then
             printf '%s' "${MOCK_GEM_USER_DIR:-}"
         fi
         ;;
@@ -130,6 +132,8 @@ case "$name" in
     gem)
         if [[ "${1:-}" == 'outdated' ]]; then
             printf '%s' "${MOCK_GEM_OUTDATED:-}"
+        elif [[ "${1:-}" == 'update' ]]; then
+            printf '%s' "${MOCK_GEM_UPDATE_OUTPUT:-}" >&2
         fi
         ;;
     python3)

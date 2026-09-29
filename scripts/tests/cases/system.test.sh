@@ -139,7 +139,7 @@ test_rubygems_uses_user_directory_without_sudo() (
     assert_status 0 "$RUN_STATUS" || exit
     assert_contains "$RUN_CALLS" 'ruby -rrubygems' || exit
     assert_not_contains "$RUN_CALLS" 'gem env user_gemhome' || exit
-    assert_contains "$RUN_CALLS" 'gem update --user-install --no-document' || exit
+    assert_contains "$RUN_CALLS" 'gem update --user-install --no-document rake' || exit
     assert_contains "$RUN_CALLS" "GEM_HOME=$FIXTURE_DIR/gems" || exit
     assert_not_contains "$RUN_CALLS" 'sudo -- gem' || exit
 )
@@ -151,6 +151,39 @@ test_rubygems_without_usable_ruby_is_skipped() (
     assert_status 0 "$RUN_STATUS" || exit
     assert_contains "$RUN_OUTPUT" '无法确定 RubyGems 用户目录' || exit
     assert_not_contains "$RUN_CALLS" 'gem outdated' || exit
+)
+
+test_rubygems_skips_ruby_default_gems() (
+    create_fixture
+    enable_tools gem ruby
+    MOCK_GEM_OUTDATED=$'openssl (3.1.0 < 4.0.2)\nrake (13.0.6 < 13.3.0)\nzlib (3.0.0 < 3.2.3)\n'
+    MOCK_GEM_DEFAULTS=$'openssl\nzlib\n'
+    run_update
+    assert_status 0 "$RUN_STATUS" || exit
+    assert_contains "$RUN_CALLS" 'gem update --user-install --no-document rake [GEM_HOME' || exit
+    assert_not_contains "$RUN_CALLS" 'openssl' || exit
+)
+
+test_rubygems_only_default_gems_outdated_is_noop() (
+    create_fixture
+    enable_tools gem ruby
+    MOCK_GEM_OUTDATED=$'openssl (3.1.0 < 4.0.2)\n'
+    MOCK_GEM_DEFAULTS=$'openssl\n'
+    run_update
+    assert_status 0 "$RUN_STATUS" || exit
+    assert_contains "$RUN_OUTPUT" '没有过期的用户 gem' || exit
+    assert_not_contains "$RUN_CALLS" 'gem update' || exit
+)
+
+test_rubygems_install_error_is_reported() (
+    create_fixture
+    enable_tools gem ruby
+    MOCK_GEM_OUTDATED=$'nokogiri (1.16.0 < 1.18.0)\n'
+    MOCK_GEM_UPDATE_OUTPUT=$'ERROR:  Error installing nokogiri:\n\tERROR: Failed to build gem native extension.\n'
+    run_update
+    assert_nonzero "$RUN_STATUS" || exit
+    assert_contains "$RUN_OUTPUT" 'RubyGems 用户包：失败' || exit
+    assert_contains "$RUN_OUTPUT" 'Error installing nokogiri' || exit
 )
 
 run_test system 'Darwin uses Homebrew only' test_darwin_uses_homebrew_not_dnf
@@ -167,3 +200,6 @@ run_test system 'Cargo never invokes the helper binary directly' test_cargo_neve
 run_test system 'Cargo update failure is reported' test_cargo_update_failure_is_reported
 run_test system 'RubyGems uses user directory' test_rubygems_uses_user_directory_without_sudo
 run_test system 'RubyGems without usable ruby is skipped' test_rubygems_without_usable_ruby_is_skipped
+run_test system 'RubyGems skips Ruby default gems' test_rubygems_skips_ruby_default_gems
+run_test system 'RubyGems with only default gems outdated is a no-op' test_rubygems_only_default_gems_outdated_is_noop
+run_test system 'RubyGems install error is reported' test_rubygems_install_error_is_reported

@@ -151,32 +151,77 @@ ensure_writable_user_directory() {
     fi
 }
 
-# gem env user_gemhome 需 RubyGems ≥3.2（macOS 系统 ruby 是 3.0 会报错）；Gem.user_dir 各版本通用
-resolve_gem_user_dir() {
+resolve_ruby_bin() {
     local gem_bin="$1"
     local ruby_bin="${gem_bin%/*}/ruby"
-    if [[ ! -x "$ruby_bin" ]]; then
-        ruby_bin="$(command -v ruby 2>/dev/null)" || return 1
+    if [[ -x "$ruby_bin" ]]; then
+        printf '%s\n' "$ruby_bin"
+        return 0
     fi
+    command -v ruby 2>/dev/null
+}
+
+# gem env user_gemhome 需 RubyGems ≥3.2（macOS 系统 ruby 是 3.0 会报错）；Gem.user_dir 各版本通用
+resolve_gem_user_dir() {
+    local ruby_bin="$1"
     "$ruby_bin" -rrubygems -e 'print Gem.user_dir' 2>/dev/null
 }
 
+# 默认 gem 随 Ruby 发布、对任何 GEM_PATH 都可见，所以 gem outdated 总会列出它们。
+# 升级默认 gem 等于在用户目录重编译标准库（缺 ruby-devel 必然失败），应跟随 Ruby 本身升级。
+list_default_gems() {
+    local ruby_bin="$1"
+    "$ruby_bin" -rrubygems -e 'puts Gem::Specification.select(&:default_gem?).map(&:name)' default-gems
+}
+
+# 从 gem outdated 的输出（"name (installed < latest)"）里剔除默认 gem，输出剩余 gem 名。
+select_user_outdated_gems() {
+    local outdated="$1"
+    local defaults="$2"
+    local line name
+    while IFS= read -r line; do
+        name="${line%% *}"
+        [[ -n "$name" ]] || continue
+        [[ $'\n'"$defaults"$'\n' == *$'\n'"$name"$'\n'* ]] && continue
+        printf '%s\n' "$name"
+    done <<<"$outdated"
+}
+
 update_gems() {
-    local gem_bin gem_user_home outdated
+    local gem_bin ruby_bin gem_user_home outdated defaults name update_output update_status
+    local -a names=()
     if ! gem_bin="$(resolve_gem_bin)"; then
         skip_step '未检测到 RubyGems'
         return
     fi
-    if ! gem_user_home="$(resolve_gem_user_dir "$gem_bin")" || [[ -z "$gem_user_home" ]]; then
+    if ! ruby_bin="$(resolve_ruby_bin "$gem_bin")" ||
+        ! gem_user_home="$(resolve_gem_user_dir "$ruby_bin")" || [[ -z "$gem_user_home" ]]; then
         skip_step '无法确定 RubyGems 用户目录（缺少可用的 ruby），已跳过'
         return
     fi
     ensure_writable_user_directory "$gem_user_home" 'RubyGems' || return 1
     outdated="$(GEM_HOME="$gem_user_home" GEM_PATH="$gem_user_home" "$gem_bin" outdated)" || return 1
-    if [[ -z "${outdated//[[:space:]]/}" ]]; then
+    defaults="$(list_default_gems "$ruby_bin")" || {
+        STEP_DETAIL='无法列出 Ruby 默认 gem'
+        return 1
+    }
+    while IFS= read -r name; do
+        [[ -z "$name" ]] || names+=("$name")
+    done < <(select_user_outdated_gems "$outdated" "$defaults")
+    if ((${#names[@]} == 0)); then
         STEP_DETAIL='没有过期的用户 gem'
         return 0
     fi
-    GEM_HOME="$gem_user_home" GEM_PATH="$gem_user_home" \
-        "$gem_bin" update --user-install --no-document
+    # gem update 在原生扩展编译失败时仍以 0 退出，只能从输出识别失败。
+    update_output="$(GEM_HOME="$gem_user_home" GEM_PATH="$gem_user_home" \
+        "$gem_bin" update --user-install --no-document "${names[@]}" 2>&1)"
+    update_status=$?
+    [[ -z "$update_output" ]] || printf '%s\n' "$update_output"
+    if ((update_status != 0)); then
+        return "$update_status"
+    fi
+    if [[ "$update_output" == *'ERROR:  Error installing'* ]]; then
+        STEP_DETAIL='部分 gem 安装失败，详见上方输出'
+        return 1
+    fi
 }

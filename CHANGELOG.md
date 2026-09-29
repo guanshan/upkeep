@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- RubyGems：不再升级 Ruby 自带的默认 gem（openssl、zlib、date 等）。`gem outdated` 总会列出它们，
+  逐个重编译标准库在缺 ruby-devel 的机器上必然失败；默认 gem 应随 Ruby 本身升级。
+- RubyGems：`gem update` 在原生扩展编译失败时仍以 0 退出，现从输出识别 `Error installing` 并把该步骤记为失败。
+
 ## [1.0.0] - 2026-09-21
 
 首个发布版本。下面的 Changed / Fixed 记录的是 1.0.0 之前的迭代，保留是因为
