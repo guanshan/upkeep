@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code 原生安装更新：调用 `~/.local/bin/claude update`，遵循已配置的更新通道，并显示更新前后的版本。
+- Claude Code PATH 检查：原生安装被其他版本遮挡或未加入 PATH 时报告失败，`make doctor` 同步检查安装入口与更新命令。
+
 ### Fixed
 
 - RubyGems：不再升级 Ruby 自带的默认 gem（openssl、zlib、date 等）。`gem outdated` 总会列出它们，

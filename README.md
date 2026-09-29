@@ -80,6 +80,7 @@ silent fallback — a typo in a config path is otherwise very hard to notice.
 **Cross-platform tools** (each updated only when its command is found)
 
 - npm, pnpm and Bun global packages. pnpm is probed with the network and prompt disabled first, so an inactive Corepack shim (or a shim with no global packages) is skipped instead of triggering an interactive download.
+- Native Claude Code at `~/.local/bin/claude`, using `claude update` and the configured release channel. The summary shows the versions before and after the update; a different Claude executable taking precedence in PATH is reported as a failure.
 - pipx-managed Python CLIs.
 - uv, and the tools uv manages.
 - rustup toolchains.
@@ -89,6 +90,8 @@ silent fallback — a typo in a config path is otherwise very hard to notice.
 npm tolerates a non-zero exit from `npm ls` (extraneous/invalid trees) as long as the output is usable; even if enumeration fails outright, required private CLIs are still (re)installed.
 
 **Private npm packages** — configured, not hard-coded. See [Site configuration](#site-configuration).
+
+**Claude Code with fnm** — npm global packages belong to the active Node version; switching Node can select another Claude installation. To share one Claude CLI across Node versions, run `claude install latest`, verify `~/.local/bin/claude --version`, then remove each npm copy with `fnm exec --using=<version> -- npm uninstall -g @anthropic-ai/claude-code`. Keep `~/.local/bin` on PATH and open a new terminal. The native installer sets `autoUpdatesChannel` to `latest`; subsequent `make update` runs update that installation. Missing native installations are skipped, and other installation methods remain with their package managers. See the [official setup guide](https://code.claude.com/docs/en/setup).
 
 **uv self-update** — when uv's GitHub-API self-update is rate-limited, it falls back to `https://astral.sh/uv/install.sh`, and skips the reinstall when already on the target version. When uv is managed by Homebrew (or another external package manager), the system-package step owns the uv update and the uv step only updates uv's tools.
 

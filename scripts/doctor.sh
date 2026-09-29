@@ -7,11 +7,16 @@
 set -uo pipefail
 
 DOCTOR_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# 只复用站点配置模块：doctor 不需要步骤编排与并发锁，但配置的查找顺序必须与
+# 复用站点配置与原生 Claude 路径解析：doctor 不需要步骤编排与并发锁，但查找顺序必须与
 # make update 完全一致，否则两边迟早漂移。
 # shellcheck source=scripts/lib/site-config.sh
 if ! source "$DOCTOR_DIR/lib/site-config.sh"; then
     printf '错误：无法加载模块 %s\n' "$DOCTOR_DIR/lib/site-config.sh" >&2
+    exit 1
+fi
+# shellcheck source=scripts/lib/claude-tools.sh
+if ! source "$DOCTOR_DIR/lib/claude-tools.sh"; then
+    printf '错误：无法加载 Claude Code 模块\n' >&2
     exit 1
 fi
 
@@ -48,6 +53,25 @@ resolve_symlink_chain() {
         fi
     done
     printf '%s\n' "$path"
+}
+
+check_claude() {
+    section 'Claude Code'
+    local claude_bin active help_output
+    if ! claude_bin="$(resolve_native_claude)"; then
+        note '未检测到 ~/.local/bin/claude（原生更新步骤会跳过）'
+        return
+    fi
+    note "Claude Code：$(tool_version "$claude_bin" --version)（$claude_bin）"
+    active="$(command -v claude 2>/dev/null)" || active=''
+    if [[ -z "$active" || ! "$active" -ef "$claude_bin" ]]; then
+        warn "PATH 未使用原生安装（当前：${active:-未找到}）；请移除重复安装或将 ~/.local/bin 加入 PATH"
+    fi
+    if help_output="$("$claude_bin" update --help 2>/dev/null)" && [[ "$help_output" == *'claude update'* ]]; then
+        note 'claude update 契约正常，遵循 Claude Code 配置的更新通道'
+    else
+        warn '原生 Claude Code 不接受 update --help：需检查安装'
+    fi
 }
 
 check_platform() {
@@ -275,6 +299,7 @@ main() {
     check_system_manager
     check_site_config
     check_node_managers
+    check_claude
     check_python
     check_rust_ruby
     check_docker

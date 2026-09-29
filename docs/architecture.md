@@ -2,7 +2,7 @@
 
 *[中文版](architecture.zh-CN.md)*
 
-upkeep is one entry script plus six lib modules. This page covers how they are split up and — more importantly — the implicit contract they use to talk to each other through global variables. That contract is the easiest thing to break.
+upkeep is one entry script plus seven lib modules. This page covers how they are split up and — more importantly — the implicit contract they use to talk to each other through global variables. That contract is the easiest thing to break.
 
 ## Layout
 
@@ -20,18 +20,19 @@ scripts/
     node-tools.sh             # npm, pnpm, Bun
     python-tools.sh           # pipx, uv, pip, virtualenvs
     system-tools.sh           # system packages, rustup, Cargo, RubyGems
+    claude-tools.sh           # native Claude Code updates and launcher lookup
   tests/
     update-local-packages.test.sh   # entry: loads harness and fixtures, runs cases
     clean-docker-cache.test.sh      # standalone, brings its own assertions
     lib/harness.sh                  # counters, assertions, test runner
     lib/fixture.sh                  # isolated run dir, call wrapper
     fixtures/command-driver.sh      # mock command driver, its own file so shellcheck sees it
-    cases/*.test.sh                 # by domain: cli, config, lock, system, node, python, flow
+    cases/*.test.sh                 # by domain: cli, config, lock, system, node, claude, python, flow
 ```
 
 Tests run entirely against mock commands and never touch a real package manager. `TEST_FILTER` narrows a run to one domain, e.g. `TEST_FILTER=node make test-update`.
 
-`clean-docker-cache.sh` is fully standalone. `doctor.sh` loads exactly one module, `site-config.sh`: it needs neither step orchestration nor locking, but its config lookup order has to match `make update` exactly, and two copies of that logic would drift.
+`clean-docker-cache.sh` is fully standalone. `doctor.sh` loads `site-config.sh` and `claude-tools.sh` to share the configuration and native Claude launcher lookup with `make update`. It needs neither step orchestration nor locking.
 
 ## Order of operations
 
@@ -44,7 +45,7 @@ Tests run entirely against mock commands and never touch a real package manager.
 5. `run_step` for each step — system packages branch on the platform, the rest are shared.
 6. `print_summary`, with the exit code decided by the failure count.
 
-Modules are sourced by a `for` loop in a fixed order: `site-config`, `step-runner`, `lock`, `node-tools`, `python-tools`, `system-tools`. `site-config` must come first — the `PRIVATE_NPM_*` variables it declares are read by `node-tools`. The rest have no ordering requirement, but `step-runner` provides primitives everyone calls, so it reads better near the front.
+Modules are sourced by a `for` loop in a fixed order: `site-config`, `step-runner`, `lock`, `node-tools`, `python-tools`, `system-tools`, `claude-tools`. `site-config` must come first — the `PRIVATE_NPM_*` variables it declares are read by `node-tools`. The rest have no ordering requirement, but `step-runner` provides primitives everyone calls, so it reads better near the front.
 
 ## The shared-state contract
 

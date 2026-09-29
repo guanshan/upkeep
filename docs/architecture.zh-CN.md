@@ -2,7 +2,7 @@
 
 *[English](architecture.md)*
 
-upkeep 是一个入口脚本加五个 lib 模块的 Bash 程序。本文说明模块划分，以及模块之间靠全局变量通信的隐式约定——后者是改动时最容易破坏的部分。
+upkeep 是一个入口脚本加七个 lib 模块的 Bash 程序。本文说明模块划分，以及模块之间靠全局变量通信的隐式约定——后者是改动时最容易破坏的部分。
 
 ## 文件布局
 
@@ -10,7 +10,7 @@ upkeep 是一个入口脚本加五个 lib 模块的 Bash 程序。本文说明�
 Makefile                      # 对外入口，所有命令的唯一来源
 scripts/
   update-local-packages.sh    # make update：站点配置、共享状态声明、步骤编排
-  doctor.sh                   # make doctor：只读体检，独立程序，不加载 lib
+  doctor.sh                   # make doctor：只读体检，复用配置与 Claude 路径解析
   clean-docker-cache.sh       # make clean-docker：独立程序，不加载 lib
   verify-apt-container.sh     # make verify-apt：容器里验证 apt 的真实契约
   lib/
@@ -20,18 +20,19 @@ scripts/
     node-tools.sh             # npm、pnpm、Bun
     python-tools.sh           # pipx、uv、pip、虚拟环境
     system-tools.sh           # 系统包、rustup、Cargo、RubyGems
+    claude-tools.sh           # Claude Code 原生更新与入口路径解析
   tests/
     update-local-packages.test.sh   # 测试入口：加载框架与夹具，按域执行用例
     clean-docker-cache.test.sh      # 独立测试，自带断言
     lib/harness.sh                  # 计数器、断言、用例执行器
     lib/fixture.sh                  # 隔离的运行目录与被测脚本的调用封装
     fixtures/command-driver.sh      # mock 命令驱动，独立成文件以纳入 shellcheck
-    cases/*.test.sh                 # 按域分组的用例：cli、config、lock、system、node、python、flow
+    cases/*.test.sh                 # 按域分组的用例：cli、config、lock、system、node、claude、python、flow
 ```
 
 测试全部基于 mock 命令，不触碰真实包管理器。用 `TEST_FILTER` 只跑一个域，例如 `TEST_FILTER=node make test-update`。
 
-`clean-docker-cache.sh` 完全独立，不加载任何 lib。`doctor.sh` 只加载 `site-config.sh` 一个模块：它不需要步骤编排和并发锁，但配置的查找顺序必须与 `make update` 完全一致，各写一份迟早漂移。
+`clean-docker-cache.sh` 完全独立，不加载任何 lib。`doctor.sh` 加载 `site-config.sh` 与 `claude-tools.sh`，与 `make update` 共用配置和原生 Claude 入口的查找逻辑，不加载步骤编排与并发锁。
 
 ## 运行顺序
 
@@ -43,7 +44,7 @@ scripts/
 4. 依次 `run_step`：系统包按平台分流，其余工具链共用。
 5. `print_summary`，并以失败计数决定退出码。
 
-模块用一个 `for` 循环按固定顺序 source：`site-config`、`step-runner`、`lock`、`node-tools`、`python-tools`、`system-tools`。`site-config` 必须排在最前——它声明的 `PRIVATE_NPM_*` 会被 `node-tools` 读取；其余模块之间没有依赖顺序要求，但 `step-runner` 提供的原语被大家调用，排前面更直观。
+模块用一个 `for` 循环按固定顺序 source：`site-config`、`step-runner`、`lock`、`node-tools`、`python-tools`、`system-tools`、`claude-tools`。`site-config` 必须排在最前——它声明的 `PRIVATE_NPM_*` 会被 `node-tools` 读取；其余模块之间没有依赖顺序要求，但 `step-runner` 提供的原语被大家调用，排前面更直观。
 
 配置的实际加载发生在 `main()` 里、`detect_platform` 之前：加载失败就整体退出，不做任何更新。
 

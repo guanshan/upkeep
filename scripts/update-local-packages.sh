@@ -19,7 +19,7 @@ LOCK_PATH=''
 LOCK_ACQUIRED=0
 
 # site-config 必须排在最前：它声明的 PRIVATE_NPM_* 会被 node-tools 读取。
-for lib_module in site-config step-runner lock node-tools python-tools system-tools; do
+for lib_module in site-config step-runner lock node-tools python-tools system-tools claude-tools; do
     # shellcheck disable=SC1090 # 模块路径由循环拼出，shellcheck 无法静态跟随
     if ! source "$LIB_DIR/$lib_module.sh"; then
         printf '错误：无法加载模块 %s\n' "$LIB_DIR/$lib_module.sh" >&2
@@ -38,6 +38,7 @@ usage() {
         '' \
         '跨平台更新：' \
         '  - npm、pnpm 与 Bun 全局包（自动补装站点配置里的私有 CLI）' \
+        '  - Claude Code 原生安装（claude update，遵循已配置的更新通道）' \
         '  - pipx 管理的 Python 命令行工具' \
         '  - uv 及 uv 管理的命令行工具（GitHub API 受限时改用安装脚本更新）' \
         '  - rustup、Cargo（需已装 cargo-update）与 RubyGems 用户工具' \
@@ -102,6 +103,7 @@ main() {
     run_step 'npm 全局包' update_npm
     run_step 'pnpm 全局包' update_pnpm
     run_step 'Bun 全局包' update_bun
+    run_step 'Claude Code 原生安装' update_claude
     run_step 'pipx 工具' update_pipx
     run_step 'uv 与 uv 工具' update_uv
     run_step 'Python 包' update_python_packages

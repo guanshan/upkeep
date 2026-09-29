@@ -76,6 +76,7 @@ PRIVATE_NPM_PACKAGES=('@acme/cli' '@acme/strict|--engine-strict')  # 必备 CLI�
 **跨平台工具**（检测到对应命令时才更新）
 
 - npm、pnpm 与 Bun 全局包。pnpm 会先禁网禁提示探测，未激活的 Corepack shim（或没有全局包的 shim）会跳过，不触发交互式下载。
+- `~/.local/bin/claude` 中的 Claude Code 原生安装，通过 `claude update` 按已配置的通道更新。汇总显示更新前后的版本；PATH 优先命中另一份 Claude 时，该步骤报失败。
 - pipx 管理的 Python 命令行工具。
 - uv 与 uv 管理的工具。
 - rustup 工具链。
@@ -85,6 +86,8 @@ PRIVATE_NPM_PACKAGES=('@acme/cli' '@acme/strict|--engine-strict')  # 必备 CLI�
 npm 枚举全局包时容忍 `npm ls` 的非零退出（extraneous/invalid 树），只要输出可用就继续；即使枚举失败，也会独立补装必备的私有 CLI。
 
 **私有 npm 包** —— 通过配置文件声明，不写在脚本里。见 [站点配置](#站点配置)。
+
+**Claude Code 与 fnm** —— npm 全局包属于当前 Node 版本，切换 Node 可能命中另一份 Claude。需要跨 Node 版本共用同一 CLI 时，先运行 `claude install latest`，确认 `~/.local/bin/claude --version` 可用，再对每个装有 npm 版 Claude 的 Node 环境执行 `fnm exec --using=<version> -- npm uninstall -g @anthropic-ai/claude-code`。确保 `~/.local/bin` 位于 PATH 中，并重新打开终端。原生安装器会将 `autoUpdatesChannel` 设为 `latest`，之后执行 `make update` 即可更新该安装。没有原生安装时跳过，其他安装方式继续由对应包管理器更新。参见[官方安装说明](https://code.claude.com/docs/en/setup)。
 
 **uv 自更新** —— uv 通过 GitHub API 自更新受限时，自动改用 `https://astral.sh/uv/install.sh`，当前已是目标版本则跳过重装。uv 由 Homebrew（或其他外部包管理器）管理时，系统包阶段负责更新 uv，uv 阶段只更新其管理的工具。
 
