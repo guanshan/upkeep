@@ -90,7 +90,7 @@ The dozen steps are independent of one another; an npm network problem is no rea
 
 With `flock`, a kernel lock. Without it, an atomic `mkdir` directory lock.
 
-A kernel lock is released by the kernel when the process exits, so neither Ctrl-C nor `kill` leaves anything behind — it is the better mechanism. But macOS does not ship `flock(1)`, so the fallback has to exist: the directory lock records the owner PID, reclaims the lock when that PID is gone, and traps signals for cleanup. `kill -9` can still leave one behind, and the error message then prints the lock path so it can be dealt with directly.
+A kernel lock is released by the kernel when the process exits, including after Ctrl-C or `kill`. The empty lock file can remain and be reused safely. macOS does not ship `flock(1)`, so the fallback has to exist: the directory lock records the owner PID, reclaims the lock when that PID is gone, and traps signals for cleanup. `kill -9` can still leave a directory lock behind, and the error message prints its path.
 
 The lock directory is checked for owner and permission bits (no group or other access) and symlinks are rejected, so the lock path cannot be substituted.
 

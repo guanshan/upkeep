@@ -2,7 +2,7 @@
 
 *[English](architecture.md)*
 
-upkeep 是一个入口脚本加七个 lib 模块的 Bash 程序。本文说明模块划分，以及模块之间靠全局变量通信的隐式约定——后者是改动时最容易破坏的部分。
+upkeep 是一个入口脚本加八个 lib 模块的 Bash 程序。本文说明模块划分，以及模块之间靠全局变量通信的隐式约定——后者是改动时最容易破坏的部分。
 
 ## 文件布局
 
@@ -21,18 +21,19 @@ scripts/
     python-tools.sh           # pipx、uv、pip、虚拟环境
     system-tools.sh           # 系统包、rustup、Cargo、RubyGems
     claude-tools.sh           # Claude Code 原生更新与入口路径解析
+    codex-tools.sh            # Codex CLI 独立更新与入口路径解析
   tests/
     update-local-packages.test.sh   # 测试入口：加载框架与夹具，按域执行用例
     clean-docker-cache.test.sh      # 独立测试，自带断言
     lib/harness.sh                  # 计数器、断言、用例执行器
     lib/fixture.sh                  # 隔离的运行目录与被测脚本的调用封装
     fixtures/command-driver.sh      # mock 命令驱动，独立成文件以纳入 shellcheck
-    cases/*.test.sh                 # 按域分组的用例：cli、config、lock、system、node、claude、python、flow
+    cases/*.test.sh                 # 按域分组的用例：cli、config、lock、system、node、claude、codex、python、flow
 ```
 
 测试全部基于 mock 命令，不触碰真实包管理器。用 `TEST_FILTER` 只跑一个域，例如 `TEST_FILTER=node make test-update`。
 
-`clean-docker-cache.sh` 完全独立，不加载任何 lib。`doctor.sh` 加载 `site-config.sh` 与 `claude-tools.sh`，与 `make update` 共用配置和原生 Claude 入口的查找逻辑，不加载步骤编排与并发锁。
+`clean-docker-cache.sh` 完全独立，不加载任何 lib。`doctor.sh` 加载 `site-config.sh`、`claude-tools.sh` 与 `codex-tools.sh`，与 `make update` 共用配置和原生入口的查找逻辑，不加载步骤编排与并发锁。
 
 ## 运行顺序
 
@@ -44,7 +45,7 @@ scripts/
 4. 依次 `run_step`：系统包按平台分流，其余工具链共用。
 5. `print_summary`，并以失败计数决定退出码。
 
-模块用一个 `for` 循环按固定顺序 source：`site-config`、`step-runner`、`lock`、`node-tools`、`python-tools`、`system-tools`、`claude-tools`。`site-config` 必须排在最前——它声明的 `PRIVATE_NPM_*` 会被 `node-tools` 读取；其余模块之间没有依赖顺序要求，但 `step-runner` 提供的原语被大家调用，排前面更直观。
+模块用一个 `for` 循环按固定顺序 source：`site-config`、`step-runner`、`lock`、`node-tools`、`python-tools`、`system-tools`、`claude-tools`、`codex-tools`。`site-config` 必须排在最前——它声明的 `PRIVATE_NPM_*` 会被 `node-tools` 读取；其余模块之间没有依赖顺序要求，但 `step-runner` 提供的原语被大家调用，排前面更直观。
 
 配置的实际加载发生在 `main()` 里、`detect_platform` 之前：加载失败就整体退出，不做任何更新。
 
@@ -89,7 +90,7 @@ scripts/
 
 `acquire_lock` 先用 `prepare_lock_directory` 选定目录（依次尝试 `XDG_RUNTIME_DIR`、`XDG_STATE_HOME/upkeep`、`$HOME/.local/state/upkeep`），校验属主与权限位后，再按宿主机能力二选一：
 
-- 有 `flock`（Linux 自带）：用内核文件锁。进程无论以何种方式退出，内核都会释放，不残留。
+- 有 `flock`（Linux 自带）：用内核文件锁。进程退出时内核会释放锁；空锁文件可能保留，可安全复用。
 - 无 `flock`（macOS）：回退 `mkdir` 原子目录锁，锁内写入 PID。发现锁时若 PID 已退出则自愈回收，并注册 `EXIT`、`INT`、`TERM`、`HUP` 清理。`kill -9` 仍可能残留，此时报错会给出锁路径。
 
 两条路径的行为差异是平台能力决定的，不是可配置项。测试里的两个内核锁用例在没有 `flock` 的宿主机上会跳过，只有 Linux 上的流水线真正执行。

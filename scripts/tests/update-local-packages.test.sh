@@ -19,7 +19,7 @@ for test_module in lib/harness lib/fixture; do
     fi
 done
 
-for case_module in cli config lock system node claude python flow; do
+for case_module in cli config lock system node claude codex python flow; do
     # shellcheck disable=SC1090 # 路径由循环拼出，shellcheck 无法静态跟随
     if ! source "$TEST_DIR/cases/$case_module.test.sh"; then
         printf '错误：无法加载用例文件 %s\n' "$TEST_DIR/cases/$case_module.test.sh" >&2

@@ -19,6 +19,11 @@ if ! source "$DOCTOR_DIR/lib/claude-tools.sh"; then
     printf '错误：无法加载 Claude Code 模块\n' >&2
     exit 1
 fi
+# shellcheck source=scripts/lib/codex-tools.sh
+if ! source "$DOCTOR_DIR/lib/codex-tools.sh"; then
+    printf '错误：无法加载 Codex CLI 模块\n' >&2
+    exit 1
+fi
 
 WARN_COUNT=0
 
@@ -74,6 +79,25 @@ check_claude() {
     fi
 }
 
+check_codex() {
+    section 'Codex CLI'
+    local codex_bin active help_output
+    if ! codex_bin="$(resolve_native_codex)"; then
+        note '未检测到 ~/.local/bin/codex（独立更新步骤会跳过）'
+        return
+    fi
+    note "Codex CLI：$(tool_version "$codex_bin" --version)（$codex_bin）"
+    active="$(command -v codex 2>/dev/null)" || active=''
+    if [[ -z "$active" || ! "$active" -ef "$codex_bin" ]]; then
+        warn "PATH 未使用独立安装（当前：${active:-未找到}）；请移除重复安装或将 ~/.local/bin 加入 PATH"
+    fi
+    if help_output="$("$codex_bin" update --help 2>/dev/null)" && [[ "$help_output" == *'Update Codex to the latest version'* ]]; then
+        note 'codex update 契约正常'
+    else
+        warn '独立 Codex CLI 不接受 update --help：需检查安装'
+    fi
+}
+
 check_platform() {
     section '平台'
     local kernel_name
@@ -102,7 +126,11 @@ check_lock() {
     fi
     local lock_path="$lock_dir/upkeep-${UID}.lock"
     if [[ -n "$lock_dir" && -e "$lock_path" ]]; then
-        warn "存在锁残留：$lock_path（若确认无更新进程可手动删除）"
+        if command -v flock >/dev/null 2>&1 && [[ -f "$lock_path" && ! -L "$lock_path" && -O "$lock_path" ]] && flock -n "$lock_path" true 2>/dev/null; then
+            note "锁路径：$lock_path（flock 文件存在，当前未被占用）"
+        else
+            warn "锁路径被占用或存在异常残留：$lock_path"
+        fi
     else
         note "锁路径：${lock_path:-未知}（当前无残留）"
     fi
@@ -300,6 +328,7 @@ main() {
     check_site_config
     check_node_managers
     check_claude
+    check_codex
     check_python
     check_rust_ruby
     check_docker

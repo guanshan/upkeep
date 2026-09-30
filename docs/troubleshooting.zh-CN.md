@@ -26,7 +26,7 @@ ps aux | grep update-local-packages
 rm -rf ~/.local/state/upkeep/upkeep-$UID.lock
 ```
 
-正常退出和 Ctrl-C 都不会留下锁。macOS 上只有 `kill -9` 才可能残留——那条路径用的是 `mkdir` 目录锁，来不及执行清理。Linux 上用的是内核 `flock`，进程消失锁即释放，不存在残留。`make doctor` 的「并发锁」一节会直接报告是否有残留。
+正常退出和 Ctrl-C 都会释放锁。macOS 上只有 `kill -9` 才可能残留目录锁——那条路径用的是 `mkdir`，来不及执行清理。Linux 上用的是内核 `flock`，进程消失锁即释放；空锁文件可能保留，可安全复用。`make doctor` 的「并发锁」一节只对实际占用或异常路径报警。
 
 ## pnpm 步骤被跳过
 

@@ -26,7 +26,7 @@ Then remove the lock:
 rm -rf ~/.local/state/upkeep/upkeep-$UID.lock
 ```
 
-A normal exit and Ctrl-C both clean up after themselves. On macOS only `kill -9` can leave a lock behind — that path uses a `mkdir` directory lock and never gets to run its cleanup. On Linux the kernel `flock` is released the moment the process disappears, so residue is not possible. The "concurrency lock" section of `make doctor` reports whether a stale lock exists.
+A normal exit and Ctrl-C both release the lock. On macOS only `kill -9` can leave a directory lock behind because that path uses `mkdir`. On Linux the kernel `flock` is released when the process exits; the empty lock file may remain and is safe to reuse. The "concurrency lock" section of `make doctor` reports a held lock or abnormal path, not a free flock file.
 
 ## The pnpm step is skipped
 

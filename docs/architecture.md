@@ -2,7 +2,7 @@
 
 *[中文版](architecture.zh-CN.md)*
 
-upkeep is one entry script plus seven lib modules. This page covers how they are split up and — more importantly — the implicit contract they use to talk to each other through global variables. That contract is the easiest thing to break.
+upkeep is one entry script plus eight lib modules. This page covers how they are split up and — more importantly — the implicit contract they use to talk to each other through global variables. That contract is the easiest thing to break.
 
 ## Layout
 
@@ -21,18 +21,19 @@ scripts/
     python-tools.sh           # pipx, uv, pip, virtualenvs
     system-tools.sh           # system packages, rustup, Cargo, RubyGems
     claude-tools.sh           # native Claude Code updates and launcher lookup
+    codex-tools.sh            # standalone Codex CLI updates and launcher lookup
   tests/
     update-local-packages.test.sh   # entry: loads harness and fixtures, runs cases
     clean-docker-cache.test.sh      # standalone, brings its own assertions
     lib/harness.sh                  # counters, assertions, test runner
     lib/fixture.sh                  # isolated run dir, call wrapper
     fixtures/command-driver.sh      # mock command driver, its own file so shellcheck sees it
-    cases/*.test.sh                 # by domain: cli, config, lock, system, node, claude, python, flow
+    cases/*.test.sh                 # by domain: cli, config, lock, system, node, claude, codex, python, flow
 ```
 
 Tests run entirely against mock commands and never touch a real package manager. `TEST_FILTER` narrows a run to one domain, e.g. `TEST_FILTER=node make test-update`.
 
-`clean-docker-cache.sh` is fully standalone. `doctor.sh` loads `site-config.sh` and `claude-tools.sh` to share the configuration and native Claude launcher lookup with `make update`. It needs neither step orchestration nor locking.
+`clean-docker-cache.sh` is fully standalone. `doctor.sh` loads `site-config.sh`, `claude-tools.sh`, and `codex-tools.sh` to share configuration and native launcher lookups with `make update`. It needs neither step orchestration nor locking.
 
 ## Order of operations
 
@@ -45,7 +46,7 @@ Tests run entirely against mock commands and never touch a real package manager.
 5. `run_step` for each step — system packages branch on the platform, the rest are shared.
 6. `print_summary`, with the exit code decided by the failure count.
 
-Modules are sourced by a `for` loop in a fixed order: `site-config`, `step-runner`, `lock`, `node-tools`, `python-tools`, `system-tools`, `claude-tools`. `site-config` must come first — the `PRIVATE_NPM_*` variables it declares are read by `node-tools`. The rest have no ordering requirement, but `step-runner` provides primitives everyone calls, so it reads better near the front.
+Modules are sourced by a `for` loop in a fixed order: `site-config`, `step-runner`, `lock`, `node-tools`, `python-tools`, `system-tools`, `claude-tools`, `codex-tools`. `site-config` must come first — the `PRIVATE_NPM_*` variables it declares are read by `node-tools`. The rest have no ordering requirement, but `step-runner` provides primitives everyone calls, so it reads better near the front.
 
 ## The shared-state contract
 
@@ -88,7 +89,7 @@ Three things that catch people out:
 
 `acquire_lock` first picks a directory through `prepare_lock_directory` (trying `XDG_RUNTIME_DIR`, then `XDG_STATE_HOME/upkeep`, then `$HOME/.local/state/upkeep`) and checks its owner and permission bits. It then branches on what the host can do:
 
-- **With `flock`** (standard on Linux): a kernel file lock. However the process exits, the kernel releases it, so nothing is left behind.
+- **With `flock`** (standard on Linux): a kernel file lock. When the process exits, the kernel releases the lock; the empty lock file can remain and is safe to reuse.
 - **Without `flock`** (macOS): an atomic `mkdir` lock with the owner PID written inside. A lock whose PID is gone is reclaimed, and `EXIT`, `INT`, `TERM` and `HUP` are trapped for cleanup. `kill -9` can still leave one behind, and the error message then prints the lock path.
 
 The difference is dictated by the platform, not configurable. The two kernel-lock test cases skip on a host without `flock`, so only CI on Linux actually exercises them.

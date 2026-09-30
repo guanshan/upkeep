@@ -10,9 +10,11 @@
 
 - Claude Code 原生安装更新：调用 `~/.local/bin/claude update`，遵循已配置的更新通道，并显示更新前后的版本。
 - Claude Code PATH 检查：原生安装被其他版本遮挡或未加入 PATH 时报告失败，`make doctor` 同步检查安装入口与更新命令。
+- Codex CLI 独立安装更新：调用 `~/.local/bin/codex update`，显示更新前后版本，并在入口被其他版本遮挡时报告失败；`make doctor` 同步检查。
 
 ### Fixed
 
+- `make doctor` 不再把已释放的 flock 锁文件误报为残留；实际占用或异常路径仍会报警。
 - RubyGems：不再升级 Ruby 自带的默认 gem（openssl、zlib、date 等）。`gem outdated` 总会列出它们，
   逐个重编译标准库在缺 ruby-devel 的机器上必然失败；默认 gem 应随 Ruby 本身升级。
 - RubyGems：`gem update` 在原生扩展编译失败时仍以 0 退出，现从输出识别 `Error installing` 并把该步骤记为失败。
