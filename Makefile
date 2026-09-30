@@ -16,7 +16,7 @@ SHELL_SOURCES := $(wildcard \
 	$(ROOT_DIR)scripts/tests/fixtures/*.sh)
 
 .PHONY: update update-help doctor clean-docker test-update test-clean-docker test \
-	lint shellcheck fmt-check fmt verify-apt
+	lint shellcheck fmt-check fmt verify-apt test-verify-apt
 
 update:
 	@"$(UPDATE_SCRIPT)"
@@ -36,7 +36,10 @@ test-update:
 test-clean-docker:
 	@bash "$(CLEAN_DOCKER_TEST)"
 
-test: test-update test-clean-docker
+test-verify-apt:
+	@bash "$(ROOT_DIR)scripts/tests/verify-apt-container.test.sh"
+
+test: test-update test-clean-docker test-verify-apt
 
 # apt 的真机契约验证：在一次性容器里跑真实 apt，需要 Docker 与网络。
 # 不进 make test，因为 test 必须离线可跑且不依赖外部服务。

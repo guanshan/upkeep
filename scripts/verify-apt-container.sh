@@ -107,7 +107,12 @@ run_case() {
     after="$(printf '%s\n' "$output" | sed -n 's/^PROBE-AFTER //p')"
 
     assert_contains "$output" 'Linux 系统软件包：完成' '系统包步骤汇总为完成'
-    assert_contains "$output" '1 upgraded' '真实升级了一个软件包'
+    # 基础镜像还可能有其他待升级包，不能把总数写死为 1。
+    if printf '%s\n' "$output" | grep -E '^[1-9][0-9]* upgraded,' >/dev/null; then
+        pass '真实升级了至少一个软件包'
+    else
+        fail '未找到非零的软件包升级汇总'
+    fi
 
     if [[ -n "$before" && -n "$after" && "$before" != "$after" ]]; then
         pass "版本确实前进：$before -> $after"
