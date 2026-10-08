@@ -81,7 +81,7 @@ silent fallback — a typo in a config path is otherwise very hard to notice.
 
 - npm, pnpm and Bun global packages. pnpm is probed with the network and prompt disabled first, so an inactive Corepack shim (or a shim with no global packages) is skipped instead of triggering an interactive download.
 - Native Claude Code at `~/.local/bin/claude`, using `claude update` and the configured release channel. The summary shows the versions before and after the update; a different Claude executable taking precedence in PATH is reported as a failure.
-- Standalone Codex CLI at `~/.local/bin/codex`, using `codex update`. The summary shows the versions before and after the update; another Codex executable taking precedence in PATH is reported as a failure.
+- Standalone Codex CLI at `~/.local/bin/codex`, using `codex update`. If Codex cannot detect its installation method, the step falls back to the official installer in non-interactive mode. The summary shows the versions before and after the update; another Codex executable taking precedence in PATH is reported as a failure.
 - pipx-managed Python CLIs.
 - uv, and the tools uv manages.
 - rustup toolchains.
@@ -94,7 +94,7 @@ npm tolerates a non-zero exit from `npm ls` (extraneous/invalid trees) as long a
 
 **Claude Code with fnm** — npm global packages belong to the active Node version; switching Node can select another Claude installation. To share one Claude CLI across Node versions, run `claude install latest`, verify `~/.local/bin/claude --version`, then remove each npm copy with `fnm exec --using=<version> -- npm uninstall -g @anthropic-ai/claude-code`. Keep `~/.local/bin` on PATH and open a new terminal. The native installer sets `autoUpdatesChannel` to `latest`; subsequent `make update` runs update that installation. Missing native installations are skipped, and other installation methods remain with their package managers. See the [official setup guide](https://code.claude.com/docs/en/setup).
 
-**Codex CLI with fnm** — install the [official standalone release](https://github.com/openai/codex#installing-and-running-codex-cli) with `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, verify `~/.local/bin/codex --version`, then remove each npm copy with `fnm exec --using=<version> -- npm uninstall -g @openai/codex`. Keep `~/.local/bin` on PATH and open a new terminal. Subsequent `make update` runs `codex update` on the standalone installation. Missing standalone installations are skipped; other installations stay with their package managers.
+**Codex CLI with fnm** — install the [official standalone release](https://learn.chatgpt.com/docs/codex/cli) with `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, verify `~/.local/bin/codex --version`, then remove each npm copy with `fnm exec --using=<version> -- npm uninstall -g @openai/codex`. Keep `~/.local/bin` on PATH and open a new terminal. Subsequent `make update` runs `codex update` on the standalone installation, falling back to the official installer if installation-method detection fails. Missing standalone installations are skipped; other installations stay with their package managers.
 
 **uv self-update** — when uv's GitHub-API self-update is rate-limited, it falls back to `https://astral.sh/uv/install.sh`, and skips the reinstall when already on the target version. When uv is managed by Homebrew (or another external package manager), the system-package step owns the uv update and the uv step only updates uv's tools.
 

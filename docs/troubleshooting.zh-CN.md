@@ -61,6 +61,14 @@ corepack prepare pnpm@latest --activate
 
 只有在没有 curl、或安装脚本本身失败时才会记为失败。
 
+## Codex CLI 无法识别安装方式
+
+即使 `codex update --help` 可用，`codex update` 仍可能返回 `Could not detect the Codex installation method.`。Codex CLI 0.159.2 上已复现此问题，当时入口指向旧的 `~/.local/share/codex/` 布局。
+
+更新脚本遇到这条特定错误时，会回退到[官方安装脚本](https://learn.chatgpt.com/docs/codex/cli)。完整下载后才执行，设置 `CODEX_NON_INTERACTIVE=1`，并保持 `~/.local/bin/codex` 入口。安装器子进程将该目录放到 PATH 首位，避免修改 shell 配置或询问重复安装的处理方式。其他 `codex update` 错误仍记为失败。
+
+回退失败时，汇总会区分缺少 curl、脚本下载失败和脚本执行失败；具体原因可查看该步骤前面的命令输出。`make doctor` 检查更新帮助接口与 curl 是否可用，帮助检查通过不代表安装方式识别正常。
+
 ## Cargo 步骤被跳过
 
 提示「未安装 cargo-update」。更新 Cargo 全局包需要 `cargo-install-update` 这个辅助工具，而安装它要编译数分钟。更新脚本不做这种隐式的长时间编译，需要时手动装一次：

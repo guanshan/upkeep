@@ -39,7 +39,7 @@ usage() {
         '跨平台更新：' \
         '  - npm、pnpm 与 Bun 全局包（自动补装站点配置里的私有 CLI）' \
         '  - Claude Code 原生安装（claude update，遵循已配置的更新通道）' \
-        '  - Codex CLI 独立安装（codex update）' \
+        '  - Codex CLI 独立安装（codex update；安装方式识别失败时改用官方安装脚本）' \
         '  - pipx 管理的 Python 命令行工具' \
         '  - uv 及 uv 管理的命令行工具（GitHub API 受限时改用安装脚本更新）' \
         '  - rustup、Cargo（需已装 cargo-update）与 RubyGems 用户工具' \

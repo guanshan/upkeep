@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Codex CLI：安装方式识别失败时回退到官方安装脚本，以非交互模式更新原入口；汇总区分下载、安装与其他更新失败，`make doctor` 检查回退所需的 curl。
 - `make doctor` 不再把已释放的 flock 锁文件误报为残留；实际占用或异常路径仍会报警。
 - RubyGems：不再升级 Ruby 自带的默认 gem（openssl、zlib、date 等）。`gem outdated` 总会列出它们，
   逐个重编译标准库在缺 ruby-devel 的机器上必然失败；默认 gem 应随 Ruby 本身升级。

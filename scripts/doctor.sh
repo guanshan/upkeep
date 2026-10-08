@@ -92,9 +92,14 @@ check_codex() {
         warn "PATH 未使用独立安装（当前：${active:-未找到}）；请移除重复安装或将 ~/.local/bin 加入 PATH"
     fi
     if help_output="$("$codex_bin" update --help 2>/dev/null)" && [[ "$help_output" == *'Update Codex to the latest version'* ]]; then
-        note 'codex update 契约正常'
+        note 'codex update 接口可用（帮助检查不验证安装方式识别）'
     else
         warn '独立 Codex CLI 不接受 update --help：需检查安装'
+    fi
+    if command -v curl >/dev/null 2>&1; then
+        note 'curl 可用：安装方式识别失败时可回退到官方安装脚本'
+    else
+        warn '缺少 curl：Codex CLI 安装方式识别失败时无法回退到官方安装脚本'
     fi
 }
 

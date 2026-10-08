@@ -61,6 +61,14 @@ Three cases, distinguishable by the detail text in the summary:
 
 Only a missing curl, or a failure of the install script itself, is recorded as a failure.
 
+## Codex CLI cannot detect its installation method
+
+`codex update` can return `Could not detect the Codex installation method.` even when `codex update --help` works. This was reproduced with Codex CLI 0.159.2 and a launcher pointing into the older `~/.local/share/codex/` layout.
+
+The updater now falls back to the [official installer](https://learn.chatgpt.com/docs/codex/cli) for this specific error. It downloads the entire script before executing it, sets `CODEX_NON_INTERACTIVE=1`, and preserves the `~/.local/bin/codex` entry point. The installer subprocess puts that directory first in PATH to avoid shell profile changes and conflicting-install prompts. Other `codex update` failures are still reported as failures.
+
+If the fallback fails, the summary distinguishes missing curl, download failure, and installer failure. Check the preceding command output for the underlying error. `make doctor` checks the update help interface and curl availability; a successful help check does not prove installation-method detection works.
+
 ## The Cargo step is skipped
 
 The message is that cargo-update is not installed. Updating global Cargo packages needs the `cargo-install-update` helper, and installing that helper takes minutes of compilation. The updater does not start long implicit builds, so install it yourself once:
