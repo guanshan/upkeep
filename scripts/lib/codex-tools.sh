@@ -25,7 +25,7 @@ update_codex() {
         if [[ "$update_output" == *'Could not detect the Codex installation method.'* ]]; then
             reinstall_codex_via_installer "$codex_bin" || return 1
         else
-            STEP_DETAIL="codex update 失败（退出状态：$update_status）：${update_output%%$'\n'*}"
+            STEP_DETAIL="codex update 失败（退出状态：${update_status}）：${update_output%%$'\n'*}"
             return "$update_status"
         fi
     fi

@@ -101,4 +101,5 @@ macOS ships bash 3.2 and the project treats that as the floor:
 - No `mapfile` / `readarray`. Multi-line output is read with `while IFS= read -r`.
 - No associative arrays. The summary uses three index-aligned plain arrays.
 - Under `set -u`, a possibly-empty array must be expanded as `${arr[@]+"${arr[@]}"}`; a bare `"${arr[@]}"` raises an unbound variable error.
+- Use braces around variables adjacent to Chinese punctuation, e.g. `${status}）`. macOS Bash 3.2 can include punctuation bytes in an unbraced variable name and exit under `set -u`.
 - No GNU-only options. `readlink -f` and `stat -c` do not exist on macOS, so those need a per-platform branch or a pure-Bash equivalent.

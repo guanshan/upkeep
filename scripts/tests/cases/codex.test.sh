@@ -86,6 +86,7 @@ test_codex_update_failure_continues() (
     assert_contains "$RUN_OUTPUT" 'codex update 失败（退出状态：42）：Error: download failed' || exit
     assert_not_contains "$RUN_CALLS" 'codex-installer-download' || exit
     assert_contains "$RUN_CALLS" 'rustup update' || exit
+    assert_contains "$RUN_OUTPUT" 'rustup 工具链：完成' || exit
 )
 
 test_codex_unknown_method_uses_installer() (
