@@ -79,7 +79,10 @@ test_codex_update_failure_continues() (
     MOCK_FAIL_MANAGER='codex'
     run_update
     assert_nonzero "$RUN_STATUS" || exit
-    assert_contains "$RUN_OUTPUT" 'Codex CLI 独立安装：失败' || exit
+    assert_contains "$RUN_OUTPUT" 'Codex CLI 独立安装：失败' || {
+        printf '%s\n' "$RUN_OUTPUT" >&2
+        exit 1
+    }
     assert_contains "$RUN_OUTPUT" 'codex update 失败（退出状态：42）：Error: download failed' || exit
     assert_not_contains "$RUN_CALLS" 'codex-installer-download' || exit
     assert_contains "$RUN_CALLS" 'rustup update' || exit
